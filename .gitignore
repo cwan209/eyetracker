@@ -5,5 +5,5 @@
 xcuserdata/
 *.xcodeproj/*
 !*.xcodeproj/project.pbxproj
-.claude/worktrees/
 DerivedData/
+.claude/
