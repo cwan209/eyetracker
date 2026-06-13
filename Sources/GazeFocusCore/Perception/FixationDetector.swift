@@ -16,12 +16,20 @@ public struct FixationDetector: Sendable {
         public var minDuration: Double
         /// Samples below this confidence break the fixation.
         public var minConfidence: Double
+        /// An inter-sample gap larger than this restarts the run. Without it, a
+        /// silent stream gap (frame drop / brief occlusion that emits no
+        /// low-confidence sample) would keep spatially-tight pre-gap samples and
+        /// inflate dwell — a discontinuous look read as one long fixation, which
+        /// would cause a wrong switch downstream. Default ~3 frame intervals at 10Hz.
+        public var maxGap: Double
         public init(dispersionThreshold: Double = 40,
                     minDuration: Double = 0.1,
-                    minConfidence: Double = 0.5) {
+                    minConfidence: Double = 0.5,
+                    maxGap: Double = 0.3) {
             self.dispersionThreshold = dispersionThreshold
             self.minDuration = minDuration
             self.minConfidence = minConfidence
+            self.maxGap = maxGap
         }
     }
 
@@ -36,12 +44,21 @@ public struct FixationDetector: Sendable {
     public init(config: Config = .init()) { self.config = config }
 
     /// Feed one sample; returns the current fixation (if the run is stable and
-    /// long enough) or `.none`.
+    /// long enough) or `.none`. Assumes a monotonic time base (the shell converts
+    /// timestamps at the boundary); a non-monotonic sample is ignored defensively.
     public mutating func add(_ sample: GazeSample) -> Output {
         // Low-confidence sample breaks any in-progress fixation.
         guard sample.confidence >= config.minConfidence else {
             window.removeAll(keepingCapacity: true)
             return .none
+        }
+
+        if let last = window.last {
+            // Ignore an out-of-order sample rather than corrupt `since`/duration.
+            if sample.t <= last.t { return currentOutput() }
+            // A gap in the stream breaks continuity: start a fresh run so a silent
+            // pause cannot be read as one long fixation.
+            if sample.t - last.t > config.maxGap { window.removeAll(keepingCapacity: true) }
         }
 
         window.append(sample)
@@ -51,6 +68,10 @@ public struct FixationDetector: Sendable {
             window.removeFirst()
         }
 
+        return currentOutput()
+    }
+
+    private func currentOutput() -> Output {
         guard let first = window.first, let last = window.last else { return .none }
         let duration = last.t - first.t
         if duration >= config.minDuration && Self.dispersion(window) <= config.dispersionThreshold {

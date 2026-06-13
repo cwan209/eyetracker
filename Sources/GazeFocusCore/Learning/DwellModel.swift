@@ -71,8 +71,10 @@ public struct DwellModel: Sendable {
     }
 
     /// The current threshold: 80th percentile clamped to [floor, ceiling], plus
-    /// any accumulated revert nudge; the default before any samples or when the
-    /// distribution is unusable / the learner is net-negative.
+    /// any accumulated revert nudge. Falls back to the default (also plus the
+    /// accumulated nudge — the conservative lengthening is deliberately retained)
+    /// before any samples, or when the distribution is unusable or the learner is
+    /// net-negative.
     public func threshold() -> Instant {
         guard distributionUsable(), !isNetNegative(), !buffer.isEmpty else {
             return clamp(config.defaultThreshold + nudge)

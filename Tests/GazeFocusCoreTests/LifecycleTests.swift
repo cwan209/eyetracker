@@ -19,7 +19,10 @@ final class LifecycleTests: XCTestCase {
 
     func testPauseResume() {
         XCTAssertEqual(r.reduce(snap(.active), .pause).state, .paused)
-        XCTAssertEqual(r.reduce(snap(.paused), .resume).state, .active)
+        let resumed = r.reduce(snap(.paused), .resume)
+        XCTAssertEqual(resumed.state, .active)
+        // Camera was off while paused → resume re-arms the fresh-gaze gate.
+        XCTAssertTrue(resumed.requireFreshGaze)
     }
 
     func testSleepSuspendsAndWakeRequiresFreshGaze() {

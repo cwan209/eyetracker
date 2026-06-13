@@ -46,8 +46,10 @@ public struct LifecycleReducer: Sendable {
                 ? LifecycleSnapshot(state: .paused) : snap
 
         case .resume:
+            // The camera is off while paused, so the gaze estimate is as stale as
+            // after a wake — require a fresh confident gaze before any switch.
             return snap.state == .paused
-                ? LifecycleSnapshot(state: .active) : snap
+                ? LifecycleSnapshot(state: .active, requireFreshGaze: true) : snap
 
         case .learning(let e):
             return reduceLearning(snap, e)

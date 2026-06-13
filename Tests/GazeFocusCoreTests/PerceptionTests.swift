@@ -32,6 +32,34 @@ final class FixationTests: XCTestCase {
         XCTAssertEqual(d.add(sample(0.12, 100, 101, 0.2)), .none)  // low confidence resets
         XCTAssertEqual(d.add(sample(0.13, 100, 101, 0.2)), .none)
     }
+
+    func testSilentGapDoesNotInflateDwell() {
+        // A silent stream gap (no low-confidence sample) at the same spot must NOT
+        // be read as one continuous 10s fixation — that would cause a wrong switch.
+        var d = FixationDetector(config: .init(dispersionThreshold: 40, minDuration: 0.1, maxGap: 0.3))
+        _ = d.add(sample(1.00, 100, 100))
+        _ = d.add(sample(1.05, 101, 100))
+        XCTAssertEqual(d.add(sample(11.00, 101, 100)), .none)      // gap > maxGap → fresh run
+        // A fresh stable run after the gap still works.
+        _ = d.add(sample(11.06, 101, 100))
+        guard case let .fixation(_, since) = d.add(sample(11.12, 100, 101)) else {
+            return XCTFail("expected a fresh fixation after the gap")
+        }
+        XCTAssertEqual(since, 11.00, accuracy: 1e-9)              // since the gap, not 1.00
+    }
+
+    func testNonMonotonicSampleIsIgnored() {
+        var d = FixationDetector(config: .init(dispersionThreshold: 40, minDuration: 0.1))
+        _ = d.add(sample(0.0, 100, 100))
+        _ = d.add(sample(0.06, 101, 100))
+        let stable = d.add(sample(0.12, 100, 101))
+        guard case .fixation = stable else { return XCTFail("expected fixation") }
+        // An out-of-order sample must not corrupt the fixation's start instant.
+        guard case let .fixation(_, since) = d.add(sample(0.04, 999, 999)) else {
+            return XCTFail("expected the fixation to persist")
+        }
+        XCTAssertEqual(since, 0.0, accuracy: 1e-9)
+    }
 }
 
 final class ZoneMapTests: XCTestCase {
