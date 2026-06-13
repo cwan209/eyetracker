@@ -26,6 +26,10 @@ let package = Package(
             name: "GazeFocusShell",
             dependencies: ["GazeFocusCore"]
         ),
+        .testTarget(
+            name: "GazeFocusShellTests",
+            dependencies: ["GazeFocusShell", "GazeFocusCore"]
+        ),
         .executableTarget(
             name: "gaze-spike",
             dependencies: ["GazeFocusShell", "GazeFocusCore"],

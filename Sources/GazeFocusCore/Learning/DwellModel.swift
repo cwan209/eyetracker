@@ -1,8 +1,9 @@
 import Foundation
 
 /// The persisted slice of the learned model (U13 stores this; raw samples are
-/// kept only in the bounded in-memory buffer, never long-term).
-public struct DwellModelState: Sendable, Equatable {
+/// kept only in the bounded in-memory buffer, never long-term). `Codable` so the
+/// shell can serialize it for encrypted at-rest storage.
+public struct DwellModelState: Sendable, Equatable, Codable {
     public var threshold: Instant
     public var graduated: Bool
     public init(threshold: Instant, graduated: Bool) {
