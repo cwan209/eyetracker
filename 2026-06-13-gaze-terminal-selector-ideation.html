@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>构思：注视驱动的 macOS 终端选择器</title>
+<style>
+  :root{
+    --bg:#fbfaf7; --surface:#ffffff; --ink:#1c1d22; --muted:#5b5e68; --faint:#8a8d97;
+    --accent:#0f7d82; --accent-soft:#e2f2f1; --accent-text:#0a5b5f;
+    --warn-soft:#fbeede; --warn-text:#8a5712;
+    --good-soft:#e6f1e4; --good-text:#3a6b32;
+    --border:#e7e4dc; --border-strong:#d6d2c7;
+    --chip:#f1efe9;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.7; font-feature-settings:"kern","liga";
+  }
+  .wrap{max-width:940px; margin-inline:auto; padding:48px 24px 80px}
+  p,li{max-width:74ch}
+  a{color:var(--accent-text); text-underline-offset:2px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.88em;
+    background:var(--chip); padding:.1em .38em; border-radius:6px}
+  h1{font-size:2rem; line-height:1.25; margin:.2em 0 .1em; letter-spacing:-.01em}
+  h2{font-size:1.34rem; margin:2.4em 0 .6em; padding-bottom:.3em; border-bottom:2px solid var(--border)}
+  h3{font-size:1.18rem; margin:0}
+  .eyebrow{font-size:.72rem; letter-spacing:.16em; font-weight:700; color:var(--accent-text); margin:0 0 .2em}
+
+  .meta{display:flex; flex-wrap:wrap; gap:8px 14px; margin:14px 0 6px; font-size:.86rem; color:var(--muted)}
+  .meta b{color:var(--ink); font-weight:600}
+  .lede{font-size:1.05rem; color:#33353d; max-width:74ch}
+
+  .stats{display:flex; flex-wrap:wrap; gap:12px; margin:26px 0 4px}
+  .stat{flex:1 1 130px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px}
+  .stat .n{font-size:1.5rem; font-weight:700; letter-spacing:-.02em}
+  .stat .l{font-size:.76rem; letter-spacing:.02em; color:var(--faint); margin-top:2px}
+
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:22px 24px; margin:16px 0}
+
+  .axes{list-style:none; padding:0; margin:.6em 0}
+  .axes li{margin:9px 0}
+  .axes .ax{display:inline-block; min-width:34px; font-weight:700; color:var(--accent-text)}
+
+  .jump{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 18px; margin:14px 0 22px}
+  .jump ol{margin:.3em 0 0; padding-left:1.4em; columns:2; column-gap:28px}
+  .jump li{margin:4px 0; max-width:none}
+  @media(max-width:620px){.jump ol{columns:1}}
+
+  .idea{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:24px 26px; margin:18px 0; scroll-margin-top:14px}
+  .idea-head{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+  .idea-num{font-size:1.18rem; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums}
+  .chips{display:flex; flex-wrap:wrap; gap:7px; margin:12px 0 4px}
+  .chip{font-size:.74rem; font-weight:600; padding:3px 10px; border-radius:999px; border:1px solid var(--border-strong); background:var(--chip); color:var(--muted); white-space:nowrap}
+  .chip.axis{background:var(--accent-soft); color:var(--accent-text); border-color:#bfe0de}
+  .chip.top{background:var(--warn-soft); color:var(--warn-text); border-color:#ecd6ad}
+  .field{margin:13px 0; max-width:74ch}
+  .field .label{display:block; font-size:.74rem; letter-spacing:.04em; font-weight:700; color:var(--faint); margin-bottom:2px}
+  .basis{border-left:3px solid var(--accent); padding:6px 0 6px 14px; background:linear-gradient(90deg,var(--accent-soft),transparent 92%); border-radius:0 6px 6px 0}
+  .basis .tag{font-weight:700; color:var(--accent-text)}
+  .down{color:#52414a}
+  figure{margin:18px 0 6px; padding:14px; background:#fcfbf8; border:1px solid var(--border); border-radius:10px}
+  figure svg{display:block; width:100%; height:auto}
+  figcaption{font-size:.82rem; color:var(--faint); margin-top:8px; text-align:center; max-width:none}
+
+  table{border-collapse:collapse; width:100%; margin:12px 0; font-size:.93rem}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top}
+  th{font-size:.76rem; letter-spacing:.02em; color:var(--faint); font-weight:700}
+  tbody tr:hover{background:#fcfbf8}
+  td.k{font-weight:600; color:#34363e}
+
+  footer.composition-signal{margin-top:48px; padding-top:16px; border-top:1px solid var(--border);
+    font-size:.78rem; color:var(--faint)}
+  .small{font-size:.88rem; color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">创意构思 · Compound Engineering</p>
+  <h1>注视驱动的 macOS 终端选择器</h1>
+  <div class="meta">
+    <span><b>日期</b> <time datetime="2026-06-13">2026-06-13</time></span>
+    <span><b>主题</b> gaze-terminal-selector</span>
+    <span><b>聚焦</b> 看哪个 terminal 就选哪个，不用鼠标</span>
+    <span><b>模式</b> elsewhere-software（全新项目）</span>
+  </div>
+  <p class="lede">看向某个终端，它就成为当前活动窗口——用眼睛代替鼠标来切换焦点。下面是 7 个排序后的方向，已对照现有产品、网络摄像头精度现实和 macOS 焦点 API 做过甄别。最大的发现：<b>macOS 上没有任何已发布的工具能做到"注视→窗口聚焦"</b>，而这个范式早已被验证（Vision Pro 的"看着即聚焦"），并且焦点切换是<i>低频、粗粒度</i>的——这让它远比"用注视当鼠标指针"更可行。</p>
+
+  <div class="stats">
+    <div class="stat"><div class="n">7</div><div class="l">排序方向</div></div>
+    <div class="stat"><div class="n">28</div><div class="l">考虑过的候选</div></div>
+    <div class="stat"><div class="n">5</div><div class="l">主题维度</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">现有 macOS 工具</div></div>
+  </div>
+
+  <h2>主题背景 · Topic Context</h2>
+  <div class="card">
+    <p style="margin-top:0"><b>空白市场真实存在。</b>macOS 上没有任何已发布工具能自动做"注视→窗口聚焦"。最接近的是 Tobii 的"注视高亮 Alt+Tab"——仅限 Windows、需要 Tobii 硬件、且仍需按一下键。苹果的"Eye Tracking"存在，但仅限 iOS/iPadOS，且不对第三方开放。Vision Pro 的"看着即聚焦 + 捏合确认"在架构上与本设想完全一致，验证了该范式。唯一的开源尝试是一个已废弃、仅 7 次提交的半成品。</p>
+    <p><b>精度决定设计。</b>标准 MacBook 摄像头只有 RGB（没有深度——只有 iPhone/iPad 有 TrueDepth）。基于外观的网络摄像头注视估计，在 80&nbsp;cm 距离、经校准后约为 <b>3–4° / ~50&nbsp;mm 误差</b>——足以区分左右、象限，或宽于 ~150–200&nbsp;mm 的窗格，但<i>分不清</i>狭窄的 tmux 分屏或 &gt;4 列。专用 Tobii 硬件可达 ~0.5°。头部姿态（"看哪个显示器/哪一半"）比真正的注视容易得多。</p>
+    <p><b>为何可行。</b>开发者每小时只切换焦点约 10–30 次——而鼠标指针有上千次微移动。你只需要<i>粗粒度、偶尔</i>的消歧，而非像素级精准指针。核心风险是 <b>Midas 接触问题</b>（看到什么就选中什么）；最有据可循的防御是<i>"先看后按"</i>（注视瞄准、按键触发）&gt; 语音 &gt; 长停留 &gt; 眨眼。</p>
+    <p style="margin-bottom:0"><b>macOS 给了你接口。</b><code>CGWindowListCopyWindowInfo</code> 读取窗口几何（无需权限）；<code>AXUIElement</code> 设置焦点（需要辅助功能权限）。<code>AutoRaise</code>（2025）是一个"焦点跟随<i>鼠标</i>"的守护进程——最直接的架构类比，把鼠标换成注视即可。一个坑：tmux/iTerm 的<b>窗格不是 OS 窗口</b>——选中一个窗格需要应用专属集成，或比网络摄像头更细的注视精度。</p>
+  </div>
+
+  <h2>主题维度 · Topic Axes</h2>
+  <ul class="axes">
+    <li><span class="ax">A1</span> <b>注视/注意力感知</b> — 输入信号的来源与方式（网络摄像头 CV、Tobii、iPhone Continuity Camera、头部姿态、混合）。</li>
+    <li><span class="ax">A2</span> <b>选择与确认</b> — 把一瞥变成已提交的焦点切换；Midas 接触防御。</li>
+    <li><span class="ax">A3</span> <b>目标解析</b> — 什么是可选的、注视如何映射到它（OS 窗口 vs 窗格 vs 显示器；死区、命中目标）。</li>
+    <li><span class="ax">A4</span> <b>校准与精度</b> — 长时间保持准确；置信度、漂移、按显示器配置、优雅降级。</li>
+    <li><span class="ax">A5</span> <b>工作流集成与反馈</b> — 融入开发者的日常；开关控制、焦点反馈、与键盘共存、超越终端的范围。</li>
+  </ul>
+
+  <h2 id="ranked">排序方向 · Ranked Ideas</h2>
+  <nav class="jump" aria-label="跳转到方向">
+    <ol>
+      <li><a href="#idea-1">先看后按 · 粗分区切换器（MVP）</a></li>
+      <li><a href="#idea-2">用 iPhone 当注视传感器（Continuity Camera）</a></li>
+      <li><a href="#idea-3">用按键真值自我校准</a></li>
+      <li><a href="#idea-4">"抬高一级"：以项目为目标</a></li>
+      <li><a href="#idea-5">注视即目的地（此处编写，发往那里）</a></li>
+      <li><a href="#idea-6">注视作为 AI agent 的上下文信号</a></li>
+      <li><a href="#idea-7">注视注意力事件总线</a></li>
+    </ol>
+  </nav>
+
+  <!-- IDEA 1 -->
+  <article class="idea" id="idea-1">
+    <div class="idea-head"><span class="idea-num">1.</span><h3>先看后按 · 粗分区切换器</h3></div>
+    <div class="chips">
+      <span class="chip top">★ 首选</span>
+      <span class="chip axis">A2 · 选择与确认</span>
+      <span class="chip">置信度 85%</span>
+      <span class="chip">复杂度：中</span>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 760 244" role="img" aria-label="两段式选择：注视瞄准一个粗分区，键盘组合键把焦点提交给它。">
+        <text x="40" y="30" font-size="14" font-weight="700" fill="#1c1d22">1 · 注视瞄准分区</text>
+        <rect x="40" y="50" width="300" height="150" rx="8" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+        <line x1="190" y1="50" x2="190" y2="200" stroke="#e7e4dc" stroke-width="1.5"/>
+        <rect x="52" y="62" width="126" height="126" rx="6" fill="none" stroke="#0f7d82" stroke-width="2.2" stroke-dasharray="7 5"/>
+        <text x="115" y="130" font-size="13" font-weight="700" fill="#0a5b5f" text-anchor="middle">注视</text>
+        <text x="264" y="130" font-size="12" fill="#8a8d97" text-anchor="middle">其他</text>
+        <text x="190" y="222" font-size="12" fill="#5b5e68" text-anchor="middle">已瞄准 · 焦点未变</text>
+        <defs><marker id="arrow-1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#0f7d82"/></marker></defs>
+        <line x1="350" y1="125" x2="402" y2="125" stroke="#0f7d82" stroke-width="2" marker-end="url(#arrow-1)"/>
+        <text x="376" y="116" font-size="12" font-weight="600" fill="#0a5b5f" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">⌥Space</text>
+        <text x="410" y="30" font-size="14" font-weight="700" fill="#1c1d22">2 · 按键提交焦点</text>
+        <rect x="410" y="50" width="300" height="150" rx="8" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+        <line x1="560" y1="50" x2="560" y2="200" stroke="#e7e4dc" stroke-width="1.5"/>
+        <rect x="422" y="62" width="126" height="126" rx="6" fill="#e2f2f1" stroke="#0f7d82" stroke-width="2.6"/>
+        <text x="485" y="130" font-size="13" font-weight="700" fill="#0a5b5f" text-anchor="middle">焦点</text>
+        <text x="634" y="130" font-size="12" fill="#8a8d97" text-anchor="middle">其他</text>
+        <text x="560" y="222" font-size="12" fill="#5b5e68" text-anchor="middle">已提交 · 键盘到这</text>
+      </svg>
+      <figcaption>注视只"瞄准"一个粗分区；有意的按键才"触发"切换——于是 Midas 接触在结构上不可能发生。</figcaption>
+    </figure>
+
+    <p class="field"><span class="label">描述</span>可交付的 v1。摄像头（或头部姿态）估计你正看着哪个<b>粗分区</b>；你按一个 home 行组合键，把焦点提交到那个分区里的窗口。注视本身永不移动焦点——它<i>瞄准</i>目标，按键<i>触发</i>它。冷启动用头部姿态（"哪个显示器/哪一半"），零校准，置信度足够时再细化到注视。目标是按摄像头实际能命中的大小划分的分区，而非狭窄窗格。</p>
+    <p class="field basis"><span class="label">依据</span><span class="tag">直接：</span>"先看后按"是 HCI 研究中排名第一的 Midas 接触防御（注视+组合键 &gt; 语音 &gt; 停留 &gt; 眨眼）；苹果 Vision Pro 正是以"看着即聚焦 + 捏合确认"发布了这一模式；macOS <code>AXUIElement</code> + <code>CGWindowListCopyWindowInfo</code> 提供焦点与几何；<code>AutoRaise</code>（2025）是一个可直接借鉴的"焦点跟随输入"守护进程。</p>
+    <p class="field"><span class="label">理由</span>这既是对你需求最直接、最诚实的回答（"看哪个终端就选哪个，不用鼠标"），又是最安全的设计：没有有意按键，焦点就不会改变；而粗糙的摄像头精度足够，因为你只在按键那一刻、在可见分区之间消歧。用现成 CV 和有文档的 macOS API，今天就能做。</p>
+    <p class="field down"><span class="label">缺点</span>不是"纯免手魔法"——你仍要按一个键（但不用鼠标）。粗分区选不中狭窄的 tmux 分屏（见 #2、#4）。有些人想要零按键自动切换——作为更冒险的"勇敢模式"保留来做 A/B，而非默认。</p>
+  </article>
+
+  <!-- IDEA 2 -->
+  <article class="idea" id="idea-2">
+    <div class="idea-head"><span class="idea-num">2.</span><h3>用 iPhone 当注视传感器（Continuity Camera）</h3></div>
+    <div class="chips">
+      <span class="chip axis">A1 · 感知</span>
+      <span class="chip">置信度 55%</span>
+      <span class="chip">复杂度：大</span>
+    </div>
+    <p class="field"><span class="label">描述</span>与其和 Mac 那块平面 RGB 摄像头（~50&nbsp;mm 误差）较劲，不如把你本来就放桌上的 iPhone 通过 <b>Continuity Camera</b> 用作 Mac 的摄像头——借用它的 TrueDepth 传感器和苹果已发布的眼动 ML。Mac 端 app 变成一个轻量的焦点执行器，消费手机算出的高质量注视流。</p>
+    <p class="field basis"><span class="label">依据</span><span class="tag">直接：</span>Continuity Camera（Mac 用 iPhone 当摄像头）、iPhone TrueDepth、苹果 iOS&nbsp;18 的 Eye Tracking ML 都是真实、已发布的能力。空白在于：没人把 iPhone 更强的注视感知接回来驱动 Mac 的窗口焦点。</p>
+    <p class="field"><span class="label">理由</span>在不买 Tobii 的前提下，这是最大的精度提升——有望达到窗格级分辨率，而且用的是大多数开发者已经拥有、已经立在桌上的硬件。它改变了下游"什么是可选的"（#4）。</p>
+    <p class="field down"><span class="label">缺点</span>Continuity Camera 暴露的是<i>视频流</i>，不是注视 API——苹果把眼动数据保留在设备端私有，所以你很可能要自己在视频流上跑 CV，而非免费拿到苹果的注视。可能需要一个配套 iOS app，增加工作量。手机必须立稳并对准。</p>
+  </article>
+
+  <!-- IDEA 3 -->
+  <article class="idea" id="idea-3">
+    <div class="idea-head"><span class="idea-num">3.</span><h3>用按键真值自我校准</h3></div>
+    <div class="chips">
+      <span class="chip axis">A4 · 校准与精度</span>
+      <span class="chip">置信度 65%</span>
+      <span class="chip">复杂度：中</span>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 560 252" role="img" aria-label="一整天的精度：一次性校准衰减到可用阈值以下；自我校准则保持并上升。">
+        <line x1="60" y1="34" x2="60" y2="210" stroke="#b8b4a9" stroke-width="1.5"/>
+        <line x1="60" y1="210" x2="520" y2="210" stroke="#b8b4a9" stroke-width="1.5"/>
+        <text x="26" y="125" font-size="12" fill="#5b5e68" transform="rotate(-90 26 125)" text-anchor="middle">精度 →</text>
+        <text x="60" y="230" font-size="11" fill="#8a8d97" text-anchor="middle">上午9点</text>
+        <text x="290" y="230" font-size="11" fill="#8a8d97" text-anchor="middle">下午1点</text>
+        <text x="520" y="230" font-size="11" fill="#8a8d97" text-anchor="middle">下午5点</text>
+        <line x1="60" y1="92" x2="520" y2="92" stroke="#c9c4b8" stroke-width="1.2" stroke-dasharray="5 5"/>
+        <text x="516" y="86" font-size="10.5" fill="#8a8d97" text-anchor="end">可用阈值</text>
+        <polyline points="60,56 200,76 340,118 520,182" fill="none" stroke="#b9802f" stroke-width="2.6"/>
+        <polyline points="60,120 200,96 340,82 520,72" fill="none" stroke="#0f7d82" stroke-width="2.6"/>
+        <rect x="300" y="40" width="14" height="4" rx="2" fill="#0f7d82"/>
+        <text x="320" y="45" font-size="11.5" fill="#0a5b5f" font-weight="600">自我校准</text>
+        <rect x="300" y="58" width="14" height="4" rx="2" fill="#b9802f"/>
+        <text x="320" y="63" font-size="11.5" fill="#8a5712" font-weight="600">一次性校准</text>
+      </svg>
+      <figcaption>每次确认的切换都是一个免费的带标签样本——于是精度在一整段时间里<em>上升</em>，而不是到下午就漂移到不可用以下。</figcaption>
+    </figure>
+
+    <p class="field"><span class="label">描述</span>干掉校准仪式。每当你手动聚焦一个窗口（Cmd-Tab、点击、某个已知快捷键）<i>且正看着它</i>时，你就产生了一个免费的 <code>(注视向量 → 已知窗口)</code> 标签对。在正常工作中被动累积这些样本，持续拟合一个按显示器的注视→屏幕映射。第一分钟粗糙，午饭时就准了，零校准点——而且会自愈漂移（你往后靠、戴上眼镜）。</p>
+    <p class="field basis"><span class="label">依据</span><span class="tag">外部：</span>从自然交互中做隐式/在线再校准，在网络摄像头注视研究中已成熟——WebGazer 的"点击即真值注视点"做点击再校准。这里的"点击"就是确认的焦点切换。</p>
+    <p class="field"><span class="label">理由</span>校准是头号采用杀手，也是网络摄像头注视"demo 能用、下午三点失灵"的原因。把每次确认切换变成训练数据，让精度曲线从衰减转为<i>上升</i>——这是让其他每个方向都能日常可用（而非只在 demo 里）的使能能力。</p>
+    <p class="field down"><span class="label">缺点</span>冷启动：开头几分钟在样本累积前需要头部姿态兜底（与 #1 搭配）。切换时若看向别处会有标签噪声。按显示器布局做键控增加一点簿记。</p>
+  </article>
+
+  <!-- IDEA 4 -->
+  <article class="idea" id="idea-4">
+    <div class="idea-head"><span class="idea-num">4.</span><h3>"抬高一级"：以项目/工作区为目标</h3></div>
+    <div class="chips">
+      <span class="chip axis">A3 · 目标解析</span>
+      <span class="chip">置信度 70%</span>
+      <span class="chip">复杂度：中</span>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 780 250" role="img" aria-label="对网络摄像头来说，瞄准一个小窗格有歧义；瞄准一个大的项目区域则可靠。">
+        <text x="40" y="30" font-size="13.5" font-weight="700" fill="#8a5712">瞄准窗格  ✗</text>
+        <rect x="40" y="48" width="300" height="150" rx="8" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+        <line x1="140" y1="48" x2="140" y2="198" stroke="#e7e4dc"/>
+        <line x1="240" y1="48" x2="240" y2="198" stroke="#e7e4dc"/>
+        <line x1="40" y1="123" x2="340" y2="123" stroke="#e7e4dc"/>
+        <circle cx="140" cy="123" r="20" fill="none" stroke="#b9802f" stroke-width="2.4" stroke-dasharray="6 5"/>
+        <text x="190" y="222" font-size="11.5" fill="#5b5e68" text-anchor="middle">窗格 ~40mm ＜ 误差 → 有歧义</text>
+        <text x="372" y="128" font-size="22" fill="#b8b4a9">→</text>
+        <text x="420" y="30" font-size="13.5" font-weight="700" fill="#3a6b32">瞄准区域  ✓</text>
+        <rect x="420" y="48" width="300" height="150" rx="8" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+        <rect x="420" y="48" width="150" height="150" rx="8" fill="#e2f2f1" stroke="#0f7d82" stroke-width="2"/>
+        <line x1="570" y1="48" x2="570" y2="198" stroke="#e7e4dc"/>
+        <text x="495" y="92" font-size="12.5" font-weight="700" fill="#0a5b5f" text-anchor="middle">项目 A</text>
+        <circle cx="495" cy="120" r="16" fill="none" stroke="#0f7d82" stroke-width="2.4" stroke-dasharray="6 5"/>
+        <text x="495" y="166" font-size="10.5" fill="#0a5b5f" text-anchor="middle">shell·编辑器·浏览器</text>
+        <text x="645" y="125" font-size="12" fill="#8a8d97" text-anchor="middle">项目 B</text>
+        <text x="570" y="222" font-size="11.5" fill="#5b5e68" text-anchor="middle">区域 ~250mm ≫ 误差 → 可靠</text>
+      </svg>
+      <figcaption>让目标的"海拔"匹配传感器：一瞥分不清 tmux 窗格，却能稳稳命中整个项目区域——从而激活那个项目的全部上下文。</figcaption>
+    </figure>
+
+    <p class="field"><span class="label">描述</span>别再把终端<i>窗口</i>当作单位。你真正在其间切换的是<b>项目/仓库/tmux 会话/任务</b>。把每个注视可分辨的区域映射到一整个工作区（项目 A=左显示器，项目 B=右），于是一瞥+组合键激活那个项目的全部上下文——终端、编辑器、分支、环境——而非单个窗口。粗注视完全够用：同时进行的项目只有 2–4 个，每个占一大块区域。</p>
+    <p class="field basis"><span class="label">依据</span><span class="tag">推理：</span>瞄准精度必须 ≤ 目标的视角大小，否则选择不可靠。摄像头注视分辨 ~150–200&nbsp;mm 区域；一个整项目区域正是这个尺寸，而 tmux 窗格约 40&nbsp;mm。抬高目标海拔让粗注视自然契合，并彻底绕开"OS 窗口 vs 窗格"的问题——区域不在乎里面是什么。</p>
+    <p class="field"><span class="label">理由</span>用"往上走一级"而非"往下硬抠"来化解最难的技术分叉（窗格不是 OS 窗口、摄像头分不清），而且"免手切换我的整个项目上下文"比聚焦单个终端的工作流收益更大。</p>
+    <p class="field down"><span class="label">缺点</span>需要定义什么是"工作区"并接好多应用激活（终端+编辑器+浏览器）——比纯窗口聚焦多。比字面需求更不精确。假设布局空间稳定（项目=固定区域）。</p>
+  </article>
+
+  <!-- IDEA 5 -->
+  <article class="idea" id="idea-5">
+    <div class="idea-head"><span class="idea-num">5.</span><h3>注视即目的地（此处编写，发往那里）</h3></div>
+    <div class="chips">
+      <span class="chip axis">A5 · 工作流与反馈</span>
+      <span class="chip">置信度 60%</span>
+      <span class="chip">复杂度：中</span>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 780 226" role="img" aria-label="你在编辑器里打字；一瞥给某终端寻址；发送组合键把载荷发到那里，键盘焦点不动。">
+        <defs><marker id="arrow-5" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#0f7d82"/></marker></defs>
+        <rect x="26" y="66" width="190" height="92" rx="9" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+        <text x="121" y="96" font-size="13" font-weight="700" fill="#1c1d22" text-anchor="middle">你的编辑器</text>
+        <text x="121" y="120" font-size="11" fill="#5b5e68" text-anchor="middle">你继续打字</text>
+        <text x="121" y="137" font-size="10.5" fill="#0a5b5f" text-anchor="middle">⌨ 键盘焦点留在这</text>
+        <line x1="218" y1="112" x2="296" y2="112" stroke="#0f7d82" stroke-width="2" marker-end="url(#arrow-5)"/>
+        <text x="257" y="100" font-size="11.5" font-weight="600" fill="#0a5b5f" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">一瞥</text>
+        <rect x="300" y="66" width="172" height="92" rx="9" fill="#ffffff" stroke="#0f7d82" stroke-width="2.2" stroke-dasharray="7 5"/>
+        <text x="386" y="96" font-size="13" font-weight="700" fill="#1c1d22" text-anchor="middle">终端 B</text>
+        <text x="386" y="120" font-size="11" fill="#0a5b5f" text-anchor="middle">已寻址</text>
+        <text x="386" y="137" font-size="10.5" fill="#8a8d97" text-anchor="middle">（未聚焦）</text>
+        <line x1="474" y1="112" x2="552" y2="112" stroke="#0f7d82" stroke-width="2" marker-end="url(#arrow-5)"/>
+        <text x="513" y="100" font-size="11.5" font-weight="600" fill="#0a5b5f" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">发送键</text>
+        <rect x="556" y="66" width="196" height="92" rx="9" fill="#e2f2f1" stroke="#0f7d82" stroke-width="2"/>
+        <text x="654" y="98" font-size="13" font-weight="700" fill="#0a5b5f" text-anchor="middle">落到 B</text>
+        <text x="654" y="122" font-size="10.5" fill="#0a5b5f" text-anchor="middle">命令·粘贴·AI 回答</text>
+        <text x="390" y="196" font-size="12" fill="#5b5e68" text-anchor="middle">注视给目的地寻址；键盘从不离开你的编辑器。</text>
+      </svg>
+      <figcaption>就像把信投进信箱前先瞥一眼收件人——在你提交载荷之前，看错一眼毫无代价。</figcaption>
+    </figure>
+
+    <p class="field"><span class="label">描述</span>把"我在看哪里"和"谁拥有我的键盘"解耦。你一瞥的终端会悄悄成为你下一个派发载荷的<b>目的地寄存器</b>——粘贴的剪贴板、口述的命令、AI 的回答——而完全不从你正打字的地方抢走键盘焦点。在编辑器里编写，瞥一眼终端，按发送组合键，它就落到那里。<code>cat error.log | gaze-pipe</code> 会打进你正看着的那个终端。</p>
+    <p class="field basis"><span class="label">依据</span><span class="tag">推理：</span>抢焦点是窗口管理里昂贵又易错的部分，而 Midas 接触之所以灾难性，正是因为它劫持了输入。如果注视设置的是一个非权威的<i>目的地</i>而非输入焦点，那么在你显式提交之前，看错一眼毫无代价——提交组合键才是真正的动作，注视只是预先寻址。粗精度对"这封信寄给三个盒子里的哪一个"完全够用。</p>
+    <p class="field"><span class="label">理由</span>通过让注视变成"建议性"，彻底绕开 Midas 接触，并解锁一个连鼠标都做不好的工作流（此处编写、发往那里）。这是一个真正全新的原语，而非 Cmd-Tab 的免手翻版。</p>
+    <p class="field down"><span class="label">缺点</span>心智模型不同于"焦点跟着眼睛走"——可能不符合字面需求。需要清晰的反馈，让你信任载荷会落到哪。把输入路由进终端（而非 OS 焦点）需要按应用的粘贴/AX 管道。</p>
+  </article>
+
+  <!-- IDEA 6 -->
+  <article class="idea" id="idea-6">
+    <div class="idea-head"><span class="idea-num">6.</span><h3>注视作为 AI 编码 agent 的上下文信号</h3></div>
+    <div class="chips">
+      <span class="chip axis">A5 · 工作流与反馈</span>
+      <span class="chip">置信度 50%</span>
+      <span class="chip">复杂度：中</span>
+    </div>
+    <p class="field"><span class="label">描述</span>把"被注视的窗口/窗格/文件"作为可订阅信号暴露给 AI 编码 agent——一个 MCP "用户此刻在看什么？"资源，或一个本地端点。agent 把输出路由到你正看的窗格、在你正注视的终端里问澄清问题，并在你看向别处时<i>暂停或延后</i>长输出——等你看回来再恢复或总结。人的注意力成为 agent 循环的一等输入。</p>
+    <p class="field basis"><span class="label">依据</span><span class="tag">推理/外部：</span>Vision Pro 确立了注视作为合法的低带宽意图通道；把它重构为 <i>agent</i> 输入（而非 UI 输入）是新颖之处，而 MCP 给了"把注意力暴露为资源"现成的传输。随着多个终端 agent 已普遍（Claude Code 等），"人正在关注哪个 agent"是一个真实、未填补的协调空白。</p>
+    <p class="field"><span class="label">理由</span>最高阶的复利押注：随着终端 AI agent 增多，"agent 知道你的注意力在哪"成为一个通用协调原语（输出路由、打断礼仪、注意力感知节奏），价值随每个新 agent 增长——把工具定位在持久的"人↔agent 注意力接口"，而非一次性切换器。</p>
+    <p class="field down"><span class="label">缺点</span>依赖 agent 采用该信号（生态风险）——尽管你掌控自己的工具链。在 agent 集成之前，价值是推测性的。需要先有注意力流（#7）。</p>
+  </article>
+
+  <!-- IDEA 7 -->
+  <article class="idea" id="idea-7">
+    <div class="idea-head"><span class="idea-num">7.</span><h3>注视注意力事件总线</h3></div>
+    <div class="chips">
+      <span class="chip axis">A5 · 工作流与反馈</span>
+      <span class="chip">置信度 55%</span>
+      <span class="chip">复杂度：大</span>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 720 340" role="img" aria-label="一个注视注意力守护进程发出注意力流；多个独立消费者订阅它。">
+        <g stroke="#bfd9d7" stroke-width="1.8">
+          <line x1="300" y1="140" x2="175" y2="86"/>
+          <line x1="420" y1="140" x2="565" y2="86"/>
+          <line x1="460" y1="170" x2="540" y2="173"/>
+          <line x1="425" y1="205" x2="520" y2="270"/>
+          <line x1="295" y1="205" x2="195" y2="270"/>
+          <line x1="260" y1="170" x2="200" y2="173"/>
+        </g>
+        <rect x="260" y="132" width="200" height="78" rx="12" fill="#e2f2f1" stroke="#0f7d82" stroke-width="2.4"/>
+        <text x="360" y="162" font-size="13.5" font-weight="700" fill="#0a5b5f" text-anchor="middle">注视注意力守护进程</text>
+        <text x="360" y="184" font-size="10.5" fill="#0a5b5f" text-anchor="middle">摄像头 · 校准 · Midas 过滤</text>
+        <g font-size="12" font-weight="600" fill="#1c1d22" text-anchor="middle">
+          <rect x="62" y="40" width="150" height="46" rx="9" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+          <text x="137" y="68">终端聚焦</text>
+          <rect x="510" y="40" width="170" height="46" rx="9" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+          <text x="595" y="68">通知 / 勿扰</text>
+          <rect x="532" y="150" width="158" height="46" rx="9" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+          <text x="611" y="178">AI 编码 agent</text>
+          <rect x="470" y="270" width="150" height="46" rx="9" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+          <text x="545" y="298">发往注视</text>
+          <rect x="110" y="270" width="170" height="46" rx="9" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+          <text x="195" y="298">分析 / 热力图</text>
+          <rect x="42" y="150" width="158" height="46" rx="9" fill="#ffffff" stroke="#bfd9d7" stroke-width="1.5" stroke-dasharray="6 5"/>
+          <text x="121" y="178" fill="#0a5b5f">（ 你的下个点子 ）</text>
+        </g>
+      </svg>
+      <figcaption>摄像头、校准、Midas 过滤只在守护进程里付<em>一次</em>代价；之后每个注视功能都变成一个轻量订阅者，而非一次重写。</figcaption>
+    </figure>
+
+    <p class="field"><span class="label">描述</span>把"注视→聚焦"功能作为一个本地 IPC 服务的第一个<i>消费者</i>来发布，该服务发出结构化的"用户此刻在关注哪个窗口/区域/窗格"流（id、应用、置信度、注视时长、时间戳）。守护进程一次性拥有摄像头、校准和 Midas 接触过滤——这四个真正难的部分；其余一切（终端聚焦、通知门控、发往注视、按窗口勿扰、AI-agent 上下文）通过 Unix socket 订阅。确认方式（组合键/语音/停留）本身是读同一候选流的可插拔插件。</p>
+    <p class="field basis"><span class="label">依据</span><span class="tag">推理：</span>构思过程浮现出 5+ 个不同的未来消费者，每一个若单独构建，都会各自重新解决摄像头采集、辅助功能权限、校准和 Midas 过滤。单生产者/多订阅者结构一次性付清这个代价，把第 N+1 个功能的边际成本压成一个轻量订阅者——这就是杠杆的定义。</p>
+    <p class="field"><span class="label">理由</span>把单一用途工具重构为平台原语——"macOS 从未发布的注意力 API"。焦点选择器成为总线的一个演示，而非天花板，且每个未来的注视点子都变成一个周末项目。</p>
+    <p class="field down"><span class="label">缺点</span>经典 YAGNI 风险——在证明单一用例之前就造平台，为时过早。正确顺序几乎一定是：先做 MVP（#1），等第二个消费者真实存在时再<i>抽取</i>总线。把 v1 过度架构化可能拖垮项目。</p>
+  </article>
+
+  <h2>淘汰汇总 · Rejection Summary</h2>
+  <p class="small">考虑了 28 个候选；大多数淘汰是"并入更强的幸存者"，而非"不好"——六个视角高度收敛，这本身就是信号。幸存者的维度覆盖：A1、A2、A3、A4 各 ≥1；A5 ×3。没有维度落空。</p>
+  <table>
+    <thead><tr><th>点子</th><th>淘汰原因</th></tr></thead>
+    <tbody>
+      <tr><td class="k">200ms 快门（按下提交前摄像头关闭）</td><td>#1/#2 的隐私/电量<i>模式</i>，而非独立方向。</td></tr>
+      <tr><td class="k">按住说话 / 预览-切换总线 / 先指定后开火</td><td>#1"注视瞄准、按键触发"的确认变体——并入 MVP。</td></tr>
+      <tr><td class="k">零确认 · 焦点跟随注视</td><td>Midas 接触风险高（读日志会抢焦点）；仅作为更冒险的"勇敢模式"保留来做 A/B。</td></tr>
+      <tr><td class="k">意图感知注视（阅读扫视 vs 瞄准注视）</td><td>强化 #1 的技术，而非独立产品方向。</td></tr>
+      <tr><td class="k">精度匹配分区 / 三列布局管理器</td><td>这就是 MVP（#1）的目标模型——并非独立。</td></tr>
+      <tr><td class="k">牧羊犬式布局驱赶（注视把窗格放大到填满分区）</td><td>巧妙但投机；更适合作为"够到窗格"路径的 brainstorm 变体。</td></tr>
+      <tr><td class="k">窗口飞到你这来（召唤动画）</td><td>噱头；召唤动画相比纯聚焦增加迷失风险。</td></tr>
+      <tr><td class="k">分层 分区→饼菜单（50 窗格场景）</td><td>小众高玩场景；对 v1 过早。</td></tr>
+      <tr><td class="k">Tobii 级窗格模式（"产品其实是适配器"）</td><td>洞见并入 #2（精度提升）+ #4（目标海拔）。</td></tr>
+      <tr><td class="k">置信度自适应粒度</td><td>并入 #1 和 #3 的技术；两者都重叠。</td></tr>
+      <tr><td class="k">注意力门控通知路由</td><td>事件总线（#7）的订阅者；在那里覆盖。</td></tr>
+      <tr><td class="k">贬低未被注视者（暗化/暂停未看的窗口）</td><td>并入 #1 的焦点反馈（暗化非活动分区）。</td></tr>
+      <tr><td class="k">仅在卡住时武装（"迷失"状态自动武装）</td><td>投机——可靠检测"卡住"未经证实；brainstorm 变体。</td></tr>
+      <tr><td class="k">仅高亮副手（永不抢焦点）</td><td>这是 #1 最安全的首个里程碑框架；并入。</td></tr>
+      <tr><td class="k">抢焦点护盾（注视=唯一焦点权威）</td><td>强重构但痛点小众；更适合作为对 #1 价值主张的 brainstorm 角度。</td></tr>
+      <tr><td class="k">注意力热力图 / 工作流记忆</td><td>分析锦上添花；总线订阅者（#7），期望价值较低。</td></tr>
+      <tr><td class="k">注视门控广播（在多个 SSH 窗格中单独选一个）</td><td>受众狭窄（机群运维）。</td></tr>
+      <tr><td class="k">可移植校准配置</td><td>#3/#7 的一个特性，单独看意义不大。</td></tr>
+    </tbody>
+  </table>
+
+  <footer class="composition-signal">
+    由 ce-ideate 于 2026-06-13 编写 · 全新项目（elsewhere-software）· 来源：用户提示
+    &ldquo;我想做一个eyeball tracker，我看到哪个terminal就选定哪个terminal，不用鼠标点&rdquo;
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>实现计划：自适应注视焦点切换器（MVP）</title>
+<style>
+  :root{
+    --bg:#fbfaf7; --surface:#ffffff; --ink:#1c1d22; --muted:#5b5e68; --faint:#8a8d97;
+    --accent:#0f7d82; --accent-soft:#e2f2f1; --accent-text:#0a5b5f;
+    --warn-soft:#fbeede; --warn-text:#8a5712; --warn-border:#ecd6ad;
+    --good-soft:#e6f1e4; --good-text:#3a6b32;
+    --danger-soft:#f6e3e0; --danger-text:#9a4634; --danger-border:#d8b3a8;
+    --border:#e7e4dc; --border-strong:#d6d2c7; --chip:#f1efe9; --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.7; font-feature-settings:"kern","liga";}
+  .wrap{max-width:960px; margin-inline:auto; padding:48px 24px 80px}
+  p,li{max-width:76ch}
+  a{color:var(--accent-text); text-underline-offset:2px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.85em; background:var(--chip); padding:.1em .36em; border-radius:6px}
+  h1{font-size:1.9rem; line-height:1.25; margin:.2em 0 .1em; letter-spacing:-.01em}
+  h2{font-size:1.3rem; margin:0 0 .5em; padding-bottom:.3em; border-bottom:2px solid var(--border)}
+  .eyebrow{font-size:.72rem; letter-spacing:.16em; font-weight:700; color:var(--accent-text); margin:0 0 .2em}
+  section{margin:34px 0}
+  .meta{display:flex; flex-wrap:wrap; gap:8px 14px; margin:14px 0 6px; font-size:.85rem; color:var(--muted)}
+  .meta b{color:var(--ink); font-weight:600}
+  .lede{font-size:1.04rem; color:#33353d}
+  .stats{display:flex; flex-wrap:wrap; gap:12px; margin:24px 0 4px}
+  .stat{flex:1 1 130px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:13px 16px}
+  .stat .n{font-size:1.45rem; font-weight:700; letter-spacing:-.02em}
+  .stat .l{font-size:.74rem; color:var(--faint); margin-top:2px}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 22px; margin:14px 0}
+  .ktd{margin:11px 0; padding-left:14px; border-left:3px solid var(--accent)}
+  .ktd .id{font-weight:700; color:var(--accent-text)}
+  figure{margin:18px 0; padding:16px; background:#fcfbf8; border:1px solid var(--border); border-radius:10px}
+  figure svg{display:block; width:100%; height:auto}
+  figcaption{font-size:.82rem; color:var(--faint); margin-top:10px; text-align:center; max-width:none}
+  pre{background:#2b2b2f; color:#e8e6df; border-radius:10px; padding:16px 18px; overflow:auto; font-size:.82rem; line-height:1.5}
+  pre code{background:none; padding:0; color:inherit; font-size:inherit}
+  table{border-collapse:collapse; width:100%; margin:10px 0 14px; font-size:.92rem}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top}
+  th{font-size:.74rem; color:var(--faint); font-weight:700}
+  td.id{font-weight:700; color:var(--accent-text); white-space:nowrap}
+  .jump{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px; margin:12px 0 18px}
+  .jump ul{margin:.2em 0 0; padding-left:1.1em; columns:2; column-gap:26px; list-style:none}
+  .jump li{margin:3px 0; max-width:none}
+  .jump .ph{font-size:.72rem; color:var(--faint); font-weight:700; letter-spacing:.04em; columns:1; display:block; margin:.4em 0 .1em}
+  @media(max-width:640px){.jump ul{columns:1}}
+  article.unit{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 20px; margin:12px 0; scroll-margin-top:12px}
+  .unit h3{font-size:1.04rem; margin:0 0 4px}
+  .unit .uid{color:var(--accent); font-weight:700}
+  .unit dl{display:grid; grid-template-columns:auto 1fr; gap:3px 12px; margin:8px 0; font-size:.9rem}
+  .unit dt{font-size:.7rem; font-weight:700; color:var(--faint); letter-spacing:.04em; padding-top:3px}
+  .unit dd{margin:0}
+  .unit details{margin-top:8px; border-top:1px solid var(--border); padding-top:8px}
+  .unit summary{cursor:pointer; font-size:.82rem; font-weight:600; color:var(--accent-text)}
+  .unit details .body{margin-top:8px; font-size:.92rem}
+  .unit details .body p{margin:.4em 0}
+  .unit .lbl{font-size:.7rem; font-weight:700; color:var(--faint); letter-spacing:.03em}
+  .pill{display:inline-block; font-size:.72rem; font-weight:600; padding:2px 9px; border-radius:999px; border:1px solid var(--border-strong); background:var(--chip); color:var(--muted)}
+  .pill.gate{background:var(--danger-soft); color:var(--danger-text); border-color:var(--danger-border)}
+  .pill.phase{background:var(--accent-soft); color:var(--accent-text); border-color:#bfe0de}
+  ul.tight{margin:.4em 0} ul.tight li{margin:5px 0}
+  h3.grp{font-size:.95rem; margin:18px 0 2px; color:#34363e}
+  .callout{background:var(--danger-soft); border:1px solid var(--danger-border); border-radius:10px; padding:12px 16px; margin:14px 0}
+  .callout b{color:var(--danger-text)}
+  footer.composition-signal{margin-top:48px; padding-top:16px; border-top:1px solid var(--border); font-size:.78rem; color:var(--faint)}
+  hr.sep{border:none; border-top:1px solid var(--border); margin:30px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">实现计划 · ce-plan</p>
+  <h1>自适应注视焦点切换器（MVP）</h1>
+  <div class="meta">
+    <span><b>title</b> feat: Adaptive Gaze Focus Switcher (MVP)</span>
+    <span><b>type</b> feat</span>
+    <span><b>date</b> <time datetime="2026-06-13">2026-06-13</time></span>
+    <span><b>deepened</b> 2026-06-13</span>
+    <span><b>origin</b> docs/brainstorms/2026-06-13-gaze-terminal-focus-requirements.md</span>
+  </div>
+  <p class="lede">一个原生 macOS 菜单栏小工具:看哪个并排终端窗口、注视停留够久,键盘焦点就切过去——不用键、不用鼠标。架构是一个可无头测试的 <code>GazeFocusCore</code> SwiftPM 库(全部感知、决策、学习、生命周期逻辑)+ 一个薄 <code>GazeFocus</code> agent 壳(摄像头、Vision+CoreML 注视推断、Accessibility 窗口控制、菜单栏 UI)。安全兜底优先:任何不确定都按住焦点。整个工程由两个设备上的测量门控——注视精度,与「停下来读」的误切率。</p>
+
+  <div class="stats">
+    <div class="stat"><div class="n">15</div><div class="l">实现单元</div></div>
+    <div class="stat"><div class="n">29</div><div class="l">需求 (R1–R29)</div></div>
+    <div class="stat"><div class="n">2</div><div class="l">设备 kill-criteria</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">第三方 Swift 运行时依赖</div></div>
+  </div>
+
+  <section>
+    <h2>Problem Frame · 问题背景</h2>
+    <p>macOS 上没有工具按注视移动窗口焦点;在 2–3 个并排终端间切换要伸手摸鼠标或循环 Cmd-Tab。这活儿粗粒度、低频,普通摄像头够用——风险全在<b>永不在错误时刻抢焦点</b>:读日志时焦点跳走,接下来的键全打错窗口。计划把安全兜底闸链、打字闸、停留阈值下限、误切恢复当作承重工作。两个赌注在搭功能前先在设备上验证:(1) 摄像头到底能不能分清左/中/右;(2) 纯停留能不能在<b>刻意的阅读停顿</b>(停下打字去研究相邻窗口——打字闸覆盖不到的情况)里不误切。</p>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Key Technical Decisions · 关键技术决策</h2>
+    <div class="ktd"><span class="id">KTD1.</span> <b>双 target:可测试核心 + 薄 agent 壳。</b><code>GazeFocusCore</code>(无 AVFoundation/AppKit 导入)装全部纯逻辑;<code>GazeFocus</code> Xcode app 在 protocol 接缝后面包所有 OS 调用。沿用 <code>personal_os</code> 的 <code>PersonalOSCore</code> 约定。</div>
+    <div class="ktd"><span class="id">KTD2.</span> <b>注视 = Apple Vision 关键点 + CoreML 回归模型,跑在 ANE。</b><code>VNDetectFaceLandmarksRequest</code>(瞳孔+头姿)喂一个转换后的 L2CS-Net(MIT,~3.9° MAE)输出 yaw/pitch → 左/中/右分区。ARKit <code>lookAtPoint</code>(仅 iOS/TrueDepth)、MediaPipe(无原生 macOS Swift)均被否决。「摄像头到底能不能分区」是头号未验证赌注,由 kill-criterion 门控。</div>
+    <div class="ktd"><span class="id">KTD3.</span> <b>毕业时一次性 4 点校准。</b>锚定未校准模型 5–15° 的个人偏差。solver 与逐点固视接受是纯核心逻辑。笔记本几何会漂移,所以校准是<b>会话易变</b>的——唤醒时重校验,不当作永久值。</div>
+    <div class="ktd"><span class="id">KTD4.</span> <b>I-DT 固视检测(离散度 1.0°、100ms 窗),非 I-VT。</b>F1 更高(0.96 vs 0.94)、对噪声更稳。停留计时前必须先确认稳定固视——靠这个离散度闸而非单纯时长区分一瞥与提交(固视时长是单峰的)。</div>
+    <div class="ktd"><span class="id">KTD5.</span> <b>学习目标 = 最小有意停留,按分位学习、受分布质量门控、叠在默认值上。</b>阈值 = 有效停留事件的 <b>80 分位</b>(~100 样本有界缓冲),非均值、非眼→手延迟。毕业需 ≥40 有效事件或上限 <b>且</b>分布足够窄/单峰;太宽/多峰则钉在默认值并明说(origin R15 的退路)。默认 600ms、滑块可调、限定 [300,1000]ms。激活后被撤销的切换施加有界加长。训练/服务分布偏移列为设备验证项。</div>
+    <div class="ktd"><span class="id">KTD6.</span> <b>窗口控制 = <code>CGWindowListCopyWindowInfo</code> + Accessibility + 进程激活。</b>几何/ownerPID/ownerName 无需 Screen Recording(只有标题才需要,从不读)。聚焦 = <code>NSRunningApplication(pid).activate()</code> 再 <code>AXUIElementSetAttributeValue</code>(kAXMainWindow/kAXFocusedWindow)+ <code>kAXRaiseAction</code>。光 raise 不转移键盘焦点,必须 activate。</div>
+    <div class="ktd"><span class="id">KTD7.</span> <b>两个 TCC 权限:Accessibility + Camera;v1 注视管线进程内。</b>打字闸只读击键<i>时刻</i>(<code>NSEvent</code> .keyDown,搭 Accessibility,绝不读 .characters/修饰键——守卫不变量)。同一 monitor 检测两个硬编码 Cmd/Ctrl 组合键(暂停/撤销),无需第三方热键库。origin R29 的 XPC 隔离子进程<b>延后</b>:v1 进程内跑 Vision+CoreML(模型是离线转换的 MIT 静态产物、非运行时;二进制公证),残余风险接受,带再评估门。</div>
+    <div class="ktd"><span class="id">KTD8.</span> <b>非沙盒、Developer-ID 签名 + 公证;不上 Mac App Store。</b>Accessibility 与沙盒不能共存;MAS 强制新 app 沙盒。硬约束。</div>
+    <div class="ktd"><span class="id">KTD9.</span> <b>实时采集路径:先用最简单的串行限定结构,尖刺证明必要才升级。</b>U7 尖刺先评估串行队列限定对象,失败才上 actor+自定义 executor。<code>nonisolated</code> delegate 在跨边界前把 Sendable 的 <code>CVPixelBuffer</code> 从非 Sendable 的 <code>CMSampleBuffer</code> 里取出。头号技术风险。</div>
+    <div class="ktd"><span class="id">KTD10.</span> <b>静态加密 = FileVault + CryptoKit AES.GCM + Keychain 密钥;导出口令封装。</b>macOS 上 <code>NSFileProtectionComplete</code> 无效,否决。拟合参数+少量近窗以 AES.GCM(AAD=bundle-id+schema 版本)封,密钥在 Keychain(绑签名身份 + WhenUnlockedThisDeviceOnly),文件在 per-user Application Support、排除备份。无密钥轮换(擦除重学)。<b>导出</b>口令封装、只含参数+校准、并警告这是个人行为数据。</div>
+    <div class="ktd"><span class="id">KTD11.</span> <b><code>stopRunning()</code> 真关相机。</b>LED 硬连传感器电源,无软静音。暂停与睡眠/锁屏/挂起都 <code>stopRunning()</code>,切换去抖以避开 ~10s 硬件冻结。</div>
+    <div class="ktd"><span class="id">KTD12.</span> <b>安全兜底是脊梁:不确定就按住焦点。</b>低置信、<2 个存活目标、全屏/Space 切换、唤醒后过时估计、Accessibility 丢失,全归结为「按住、不切」。Space 身份需私有 API,所以在 <code>activeSpaceDidChangeNotification</code> 上暂停。提交时「可见」是可判定谓词(当前 Space 内存活且未最小化);真遮挡用 <code>kCGWindowLayer</code> 近似、限制写明、完整遮挡检测延后。<b>校准漂移产生「自信但错」的估计</b>,兜底抓不住,故唤醒时重校验。</div>
+    <div class="ktd"><span class="id">KTD13.</span> <b>屏幕共享自动暂停延后;改发警告——但残余风险是第三方机密,不是用户烦扰。</b>共享时一次注视切换可能把另一个终端的内容(密钥、他人数据)暴露给全场,由无意一瞥触发。可靠检测需 Screen Recording 权限 + macOS 反复弹窗。v1 发免权限警告、建议手动暂停;<b>AE10 在 v1 明确未满足</b>。会议进程启发式列为可能的后续部分方案。</div>
+    <div class="ktd"><span class="id">KTD14.</span> <b>相机采集在生命周期前端 opt-in(<code>Idle</code> 态),Collecting 明显读作「相机开」。</b>授予相机权限不会启动采集;从 Idle 用户显式「开始收集」才启 <code>AVCaptureSession</code>,菜单全程明示相机在用。停留阈值<b>滑块</b>(默认 600ms)是独立于学习的手动覆盖,也是先证明核心赌注的途径。</div>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>High-Level Technical Design · 总体技术设计</h2>
+    <p>OS 侧的壳把 Sendable 事件喂进纯核心;一个生命周期 reducer 是系统事件与学习毕业的唯一汇:</p>
+    <figure>
+      <svg viewBox="0 0 900 360" role="img" aria-label="组件数据流:壳层组件把 GazeSample/窗口/击键喂进核心,核心返回 FocusDecision;reducer 是系统与学习事件的唯一汇。">
+        <rect x="14" y="20" width="420" height="320" rx="12" fill="#fcfbf8" stroke="#d6d2c7" stroke-width="1.4"/>
+        <text x="26" y="42" font-size="12.5" font-weight="700" fill="#5b5e68">GazeFocus 壳（OS 绑定）</text>
+        <rect x="32" y="56" width="180" height="40" rx="8" fill="#ffffff" stroke="#d6d2c7"/><text x="122" y="80" font-size="11.5" fill="#1c1d22" text-anchor="middle">AVCaptureSession</text>
+        <rect x="232" y="56" width="180" height="40" rx="8" fill="#ffffff" stroke="#d6d2c7"/><text x="322" y="80" font-size="11.5" fill="#1c1d22" text-anchor="middle">Vision → CoreML (ANE)</text>
+        <rect x="32" y="108" width="180" height="40" rx="8" fill="#ffffff" stroke="#d6d2c7"/><text x="122" y="132" font-size="11.5" fill="#1c1d22" text-anchor="middle">NSEvent 监听(只时刻)</text>
+        <rect x="232" y="108" width="180" height="40" rx="8" fill="#ffffff" stroke="#d6d2c7"/><text x="322" y="132" font-size="11.5" fill="#1c1d22" text-anchor="middle">CGWindowList + AX</text>
+        <rect x="32" y="160" width="180" height="40" rx="8" fill="#ffffff" stroke="#d6d2c7"/><text x="122" y="184" font-size="11.5" fill="#1c1d22" text-anchor="middle">系统事件观察者</text>
+        <rect x="232" y="160" width="180" height="40" rx="8" fill="#ffffff" stroke="#d6d2c7"/><text x="322" y="184" font-size="11.5" fill="#1c1d22" text-anchor="middle">MenuBarExtra + 校准</text>
+        <rect x="132" y="212" width="180" height="40" rx="8" fill="#ffffff" stroke="#d6d2c7"/><text x="222" y="236" font-size="11.5" fill="#1c1d22" text-anchor="middle">CryptoKit + Keychain</text>
+        <line x1="212" y1="76" x2="232" y2="76" stroke="#0f7d82" stroke-width="1.6"/>
+
+        <rect x="466" y="20" width="420" height="320" rx="12" fill="#e8f4f3" stroke="#0f7d82" stroke-width="1.8"/>
+        <text x="478" y="42" font-size="12.5" font-weight="700" fill="#0a5b5f">GazeFocusCore（纯、可无头测试）</text>
+        <rect x="484" y="56" width="184" height="40" rx="8" fill="#ffffff" stroke="#0f7d82"/><text x="576" y="76" font-size="11" fill="#0a5b5f" text-anchor="middle">I-DT 固视 + 分区映射</text><text x="576" y="89" font-size="9.5" fill="#5b5e68" text-anchor="middle">(+ 校准偏移)</text>
+        <rect x="688" y="56" width="184" height="40" rx="8" fill="#ffffff" stroke="#0f7d82"/><text x="780" y="76" font-size="11" fill="#0a5b5f" text-anchor="middle">提交策略 / 兜底闸</text><text x="780" y="89" font-size="9.5" fill="#5b5e68" text-anchor="middle">/ armed-undo</text>
+        <rect x="484" y="160" width="184" height="40" rx="8" fill="#ffffff" stroke="#0f7d82"/><text x="576" y="184" font-size="11" fill="#0a5b5f" text-anchor="middle">停留学习 + 毕业</text>
+        <rect x="688" y="160" width="184" height="40" rx="8" fill="#ffffff" stroke="#0f7d82"/><text x="780" y="184" font-size="11" fill="#0a5b5f" text-anchor="middle">生命周期 reducer(唯一汇)</text>
+        <rect x="484" y="244" width="184" height="36" rx="8" fill="#ffffff" stroke="#0f7d82"/><text x="576" y="266" font-size="11" fill="#0a5b5f" text-anchor="middle">校准 solver</text>
+
+        <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#0f7d82"/></marker></defs>
+        <line x1="412" y1="76" x2="482" y2="76" stroke="#0f7d82" stroke-width="1.8" marker-end="url(#ar)"/>
+        <text x="447" y="68" font-size="9.5" fill="#0a5b5f" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">GazeSample</text>
+        <line x1="412" y1="128" x2="686" y2="116" stroke="#0f7d82" stroke-width="1.4" marker-end="url(#ar)"/>
+        <text x="540" y="116" font-size="9.5" fill="#0a5b5f" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">击键时刻 + 组合键</text>
+        <line x1="780" y1="96" x2="780" y2="158" stroke="#bfd9d7" stroke-width="1.4"/>
+        <line x1="780" y1="116" x2="414" y2="124" stroke="#9a4634" stroke-width="1.4" marker-end="url(#ar)"/>
+        <text x="600" y="138" font-size="9.5" fill="#9a4634" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">FocusDecision → AX</text>
+        <line x1="688" y1="180" x2="668" y2="180" stroke="#bfd9d7" stroke-width="1.4"/>
+        <line x1="312" y1="180" x2="482" y2="180" stroke="#0f7d82" stroke-width="1.4" marker-end="url(#ar)"/>
+        <text x="397" y="172" font-size="9.5" fill="#0a5b5f" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">系统事件</text>
+      </svg>
+      <figcaption>承重的安全/学习逻辑全在右侧纯核心,可用合成流无头测试;左侧壳只做不确定的 OS 交互。</figcaption>
+    </figure>
+
+    <p>生命周期——只有 Active 才真切焦点;reducer(U14)拥有这个转移函数:</p>
+    <figure>
+      <svg viewBox="0 0 920 210" role="img" aria-label="状态机:Idle→Collecting→Ready→Calibrating→Active,以及 Paused/Suspended。">
+        <defs><marker id="a2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#0f7d82"/></marker></defs>
+        <g font-size="11.5" font-weight="700" text-anchor="middle">
+          <rect x="14" y="78" width="96" height="44" rx="9" fill="#f1efe9" stroke="#d6d2c7"/><text x="62" y="98" fill="#1c1d22">Idle</text><text x="62" y="113" font-size="9" font-weight="400" fill="#5b5e68">相机关</text>
+          <rect x="150" y="78" width="104" height="44" rx="9" fill="#f1efe9" stroke="#d6d2c7"/><text x="202" y="98" fill="#1c1d22">Collecting</text><text x="202" y="113" font-size="9" font-weight="400" fill="#5b5e68">只观察</text>
+          <rect x="294" y="78" width="96" height="44" rx="9" fill="#fbeede" stroke="#ecd6ad"/><text x="342" y="98" fill="#8a5712">Ready</text><text x="342" y="113" font-size="9" font-weight="400" fill="#8a5712">可启用</text>
+          <rect x="430" y="78" width="104" height="44" rx="9" fill="#fbeede" stroke="#ecd6ad"/><text x="482" y="98" fill="#8a5712">Calibrating</text><text x="482" y="113" font-size="9" font-weight="400" fill="#8a5712">4 点校准</text>
+          <rect x="574" y="78" width="96" height="44" rx="9" fill="#e2f2f1" stroke="#0f7d82" stroke-width="2"/><text x="622" y="98" fill="#0a5b5f">Active</text><text x="622" y="113" font-size="9" font-weight="400" fill="#0a5b5f">注视切焦</text>
+          <rect x="720" y="14" width="96" height="40" rx="9" fill="#ffffff" stroke="#d6d2c7"/><text x="768" y="38" fill="#1c1d22">Paused</text>
+          <rect x="720" y="146" width="116" height="44" rx="9" fill="#f6e3e0" stroke="#d8b3a8"/><text x="778" y="166" fill="#9a4634">Suspended</text><text x="778" y="181" font-size="9" font-weight="400" fill="#9a4634">睡眠/锁/全屏</text>
+        </g>
+        <g stroke="#0f7d82" stroke-width="1.7" fill="none">
+          <line x1="110" y1="100" x2="148" y2="100" marker-end="url(#a2)"/>
+          <line x1="254" y1="100" x2="292" y2="100" marker-end="url(#a2)"/>
+          <line x1="390" y1="100" x2="428" y2="100" marker-end="url(#a2)"/>
+          <line x1="534" y1="100" x2="572" y2="100" marker-end="url(#a2)"/>
+          <line x1="660" y1="86" x2="722" y2="50" marker-end="url(#a2)"/>
+          <line x1="660" y1="112" x2="722" y2="158" marker-end="url(#a2)" stroke="#9a4634"/>
+        </g>
+        <g stroke="#b8b4a9" stroke-width="1.3" fill="none">
+          <line x1="722" y1="44" x2="664" y2="92" marker-end="url(#a2)"/>
+          <line x1="722" y1="164" x2="664" y2="116" marker-end="url(#a2)"/>
+        </g>
+        <text x="62" y="150" font-size="9" fill="#8a8d97" text-anchor="middle">开始收集</text>
+        <text x="342" y="68" font-size="9" fill="#8a8d97" text-anchor="middle">40+ 有效且分布可用</text>
+        <text x="778" y="206" font-size="9" fill="#9a4634" text-anchor="middle">唤醒:重校验 + 需新的可信注视</text>
+      </svg>
+      <figcaption>Idle→Collecting 需用户显式「开始收集」(KTD14);毕业既要 40+ 有效事件又要分布可用(KTD5)。</figcaption>
+    </figure>
+
+    <p>Active 内的提交决策——任一「否」都按住焦点:</p>
+    <figure>
+      <svg viewBox="0 0 780 330" role="img" aria-label="提交决策闸链:唤醒新注视、置信与目标数、打字闸、阈值与不同窗口、提交时仍可见,任一不满足则按住。">
+        <defs><marker id="a3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#0f7d82"/></marker>
+        <marker id="a3h" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#9a4634"/></marker></defs>
+        <rect x="556" y="138" width="176" height="56" rx="10" fill="#f6e3e0" stroke="#d8b3a8" stroke-width="1.6"/>
+        <text x="644" y="164" font-size="12.5" font-weight="700" fill="#9a4634" text-anchor="middle">按住焦点</text><text x="644" y="182" font-size="11" fill="#9a4634" text-anchor="middle">不切</text>
+        <g font-size="11" fill="#1c1d22" text-anchor="middle">
+          <rect x="40" y="12" width="240" height="36" rx="8" fill="#ffffff" stroke="#d6d2c7"/><text x="160" y="34">在窗口 X 上稳定固视 (I-DT 过)</text>
+          <rect x="40" y="64" width="240" height="40" rx="8" fill="#fcfbf8" stroke="#d6d2c7"/><text x="160" y="81">唤醒后已见到新的可信注视？</text><text x="160" y="97" font-size="9.5" fill="#8a8d97">否 →</text>
+          <rect x="40" y="120" width="240" height="40" rx="8" fill="#fcfbf8" stroke="#d6d2c7"/><text x="160" y="137">置信OK 且 ≥2 存活目标？</text><text x="160" y="153" font-size="9.5" fill="#8a8d97">否 →</text>
+          <rect x="40" y="176" width="240" height="40" rx="8" fill="#fcfbf8" stroke="#d6d2c7"/><text x="160" y="193">当前窗最近在打字？</text><text x="160" y="209" font-size="9.5" fill="#8a8d97">是 →</text>
+          <rect x="40" y="232" width="240" height="40" rx="8" fill="#fcfbf8" stroke="#d6d2c7"/><text x="160" y="249">X≠当前 且 停留≥阈值？</text><text x="160" y="265" font-size="9.5" fill="#8a8d97">否 →</text>
+          <rect x="40" y="288" width="240" height="34" rx="8" fill="#fcfbf8" stroke="#d6d2c7"/><text x="160" y="310">X 当前 Space 内存活未最小化？否 →</text>
+        </g>
+        <g stroke="#0f7d82" stroke-width="1.7"><line x1="160" y1="48" x2="160" y2="62" marker-end="url(#a3)"/><line x1="160" y1="104" x2="160" y2="118" marker-end="url(#a3)"/><line x1="160" y1="160" x2="160" y2="174" marker-end="url(#a3)"/><line x1="160" y1="216" x2="160" y2="230" marker-end="url(#a3)"/><line x1="160" y1="272" x2="160" y2="286" marker-end="url(#a3)"/></g>
+        <g stroke="#9a4634" stroke-width="1.4"><line x1="280" y1="84" x2="552" y2="158" marker-end="url(#a3h)"/><line x1="280" y1="140" x2="552" y2="163" marker-end="url(#a3h)"/><line x1="280" y1="196" x2="552" y2="168" marker-end="url(#a3h)"/><line x1="280" y1="252" x2="552" y2="172" marker-end="url(#a3h)"/></g>
+        <rect x="330" y="288" width="402" height="34" rx="8" fill="#e2f2f1" stroke="#0f7d82" stroke-width="2"/>
+        <text x="531" y="310" font-size="11.5" font-weight="700" fill="#0a5b5f" text-anchor="middle">是 → activate + raise + 聚焦 X · 指示 · armed-undo</text>
+        <line x1="280" y1="305" x2="326" y2="305" stroke="#0f7d82" stroke-width="1.7" marker-end="url(#a3)"/>
+      </svg>
+      <figcaption>五道闸全过才切;增加的「唤醒后需新注视」闸防止在过时估计上抢焦点。</figcaption>
+    </figure>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Output Structure · 输出结构</h2>
+<pre><code>eyetracker/
+  Package.swift                      # GazeFocusCore 库 (swift-tools 6.0, .macOS(.v15))
+  Sources/GazeFocusCore/
+    Model/  Perception/  Policy/  Learning/  Lifecycle/  Ports/
+  Tests/GazeFocusCoreTests/          # 合成流单测
+  App/                               # Xcode app "GazeFocus" (LSUIElement agent),引用本地 package
+    Capture/  WindowControl/  Input/  Calibration/  SystemEvents/  LoginItem/  Storage/  UI/
+    Resources/GazeModel.mlpackage    # 转换后的 L2CS-Net
+    Info.plist                       # LSUIElement, NSCameraUsageDescription, NSCameraUseContinuityCameraDeviceType
+  GazeFocus.xcworkspace              # 把 Xcode app 与本地 SwiftPM package 绑定
+  Scripts/convert_gaze_model.py      # 离线 coremltools L2CS-Net -> .mlpackage</code></pre>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Implementation Units · 实现单元</h2>
+    <p>分相:<b>Phase 1 (U1–U5, U14)</b> 零 OS 依赖的核心(相内 U2→U14→U4;U5 与 U14 独立);<b>Phase 2 (U6–U9)</b> 感知与 OS 控制;<b>Phase 3 (U10–U13, U15)</b> 装配壳、校准、生命周期接线、持久化。<b>排序门:</b>在设备上用固定 600ms 默认验证安全兜底脊梁(U3/U4/U7/U8)并通过 U7 两个尖刺,<i>再</i>启用 U5 学习拟合或搭 U11。</p>
+    <nav class="jump" aria-label="单元跳转">
+      <span class="ph">Phase 1 · 核心</span>
+      <ul>
+        <li><a href="#u1">U1. 项目脚手架</a></li>
+        <li><a href="#u2">U2. 领域模型 + 接缝</a></li>
+        <li><a href="#u3">U3. I-DT 固视 + 目标解析</a></li>
+        <li><a href="#u4">U4. 提交策略 + 兜底 + undo</a></li>
+        <li><a href="#u5">U5. 停留学习 + 毕业</a></li>
+        <li><a href="#u14">U14. 生命周期 reducer</a></li>
+      </ul>
+      <span class="ph">Phase 2 · 感知与控制</span>
+      <ul>
+        <li><a href="#u6">U6. 离线模型转换</a></li>
+        <li><a href="#u7">U7. 采集 + Vision/CoreML 管线</a></li>
+        <li><a href="#u8">U8. 窗口控制 + 权限健康</a></li>
+        <li><a href="#u9">U9. 打字闸 + 全局热键</a></li>
+      </ul>
+      <span class="ph">Phase 3 · 壳与持久化</span>
+      <ul>
+        <li><a href="#u10">U10. 菜单 UI + 反馈 + 覆盖</a></li>
+        <li><a href="#u11">U11. 4 点校准</a></li>
+        <li><a href="#u12">U12. 系统事件 + 降级</a></li>
+        <li><a href="#u13">U13. 加密持久化 + 导出</a></li>
+        <li><a href="#u15">U15. 登录启动</a></li>
+      </ul>
+    </nav>
+
+    <article class="unit" id="u1"><h3><span class="uid">U1.</span> 项目脚手架:双 target 布局 <span class="pill phase">Phase 1</span></h3>
+      <dl><dt>GOAL</dt><dd>立起 <code>GazeFocusCore</code> 库 + <code>GazeFocus</code> Xcode app(两者绑定),<code>swift test</code> 绿、空菜单栏 app 可启动。</dd><dt>DEPS</dt><dd>无</dd></dl>
+      <details><summary>Files · Approach · Tests · Verification</summary><div class="body">
+        <p><span class="lbl">FILES</span> <code>Package.swift</code>, <code>Sources/GazeFocusCore/GazeFocusCore.swift</code>, <code>Tests/.../SmokeTests.swift</code>, <code>App/GazeFocusApp.swift</code>, <code>App/Info.plist</code>, <code>GazeFocus.xcworkspace</code>。</p>
+        <p><span class="lbl">APPROACH</span> 库 <code>.macOS(.v15)</code>、swift-tools 6.0、完整并发检查开。Xcode app 在 <code>.xcworkspace</code> 里以<b>本地 SwiftPM package</b> 引用 core(绑定机制——sibling 无 <code>.xcodeproj</code> 模板,需在此决定)。<code>LSUIElement</code>=YES + <code>setActivationPolicy(.accessory)</code>。</p>
+        <p><span class="lbl">TESTS</span> 无(脚手架);CI 跑 <code>swift build</code>+<code>swift test</code>;另检 app 链接 core 并启动。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u2"><h3><span class="uid">U2.</span> 核心领域模型 + protocol 接缝 <span class="pill phase">Phase 1</span></h3>
+      <dl><dt>GOAL</dt><dd>定义 Sendable 值类型、事件类型、与核心依赖的 OS 抽象 protocol。</dd><dt>DEPS</dt><dd>U1</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> <code>GazeSample</code>、<code>WindowSnapshot</code>(含 ownerPID/ownerName)、<code>LifecycleState</code>(idle…suspended)、<code>SystemEvent</code> 与 <code>LearningEvent</code>(后者含 graduated/enabled/calibrated/<b>freshGazeSeen</b>)、<code>FocusDecision</code>。Protocol:<code>WindowControl</code>、<code>GazeSource</code>、<code>KeystrokeActivity</code>(转发以核心 <code>Clock</code> 时基打戳的事件,绝非裸 <code>NSEvent.timestamp</code>)、<code>Clock</code>、<code>ModelStore</code>。</p>
+        <p><span class="lbl">TESTS</span> 值类型 Sendable/Equatable;事件枚举穷尽;mock 可编译。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u3"><h3><span class="uid">U3.</span> I-DT 固视检测 + 目标解析 <span class="pill phase">Phase 1</span></h3>
+      <dl><dt>GOAL</dt><dd>把噪声注视流变成对某窗口的稳定固视,或无目标。</dd><dt>DEPS</dt><dd>U2</dd><dt>REQ</dt><dd>R1, R2, R3, R5</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> 滑窗 I-DT(1.0°/100ms)滤扫视;<code>ZoneMapper</code> 先施核心拥有的校准偏移(U11)再映射到含它的窗口框(边界死区);歧义/窗口过多/过小→无目标。置信半径与偏移是共享核心状态。</p>
+        <p><span class="lbl">TESTS</span> 稳定簇→解析;扫视→无固视(AE3 部分);A/B 缝→无目标;5 窄窗→无目标(R3);低置信→无固视;施加偏移前后映射不同窗口。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u4"><h3><span class="uid">U4.</span> 提交策略 + 兜底闸链 + armed-undo <span class="pill phase">Phase 1</span></h3>
+      <dl><dt>GOAL</dt><dd>把固视变成切换或按住,并拥有恢复窗计时器与唤醒后闸。</dd><dt>DEPS</dt><dd>U2, U3, U14</dd><dt>REQ</dt><dd>R4, R6, R7, R8, R9, R10</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> 闸链:唤醒后 <code>requireFreshGaze</code>(读 U14 态,首个可信固视时向 reducer 发 <code>freshGazeSeen</code> 事件清除——是事件而非直接改共享态)→ 置信且 ≥2 目标 → 打字闸(注入的击键时刻 vs 近窗,均在 Clock 时基)→ 不同窗口持过阈值 → 提交时仍存活未最小化。否则粘滞;已聚焦窗的停留是 no-op。切换时起 <code>Clock</code> 驱动的 N 秒 undo 窗。</p>
+        <p><span class="lbl">TESTS</span> happy(AE1);打字闸(AE2);未达阈一瞥(AE3);已聚焦 no-op(AE5);目标消失/最小化(AE4);唤醒后首停留不切直到新注视;<2 目标/低置信→hold(AE6 逻辑侧);armed-undo N 秒内恢复(AE9 逻辑侧);<b>核心集成测</b>:真 reducer+policy 的 requireFreshGaze 接缝。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u5"><h3><span class="uid">U5.</span> 停留阈值学习 + 毕业 <span class="pill phase">Phase 1</span></h3>
+      <dl><dt>GOAL</dt><dd>从有效停留学个人阈值,毕业既看数量又看分布质量,并检测收敛失败。</dd><dt>DEPS</dt><dd>U4</dd><dt>REQ</dt><dd>R11, R12, R13*, R14, R15, R16, R17</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> ~100 样本有界缓冲(Collecting:稳定固视持过默认值且无打字、不切而记录;Active:确认切换未被立即撤销)。阈值=80 分位、限 [300,1000]ms、默认 600ms 可滑。毕业需 ≥40 或上限<b>且</b>分布够窄/单峰;太宽/多峰则钉默认值并明说(R15 退路)。撤销→有界加长;持续高撤销率→判学习器净负、回退默认。仅参数+近窗持久(U13)。</p>
+        <p><span class="lbl">TESTS</span> 已知 80 分位匹配;边界钳位;39 不毕业/40+可用→毕业(AE8 逻辑侧);宽/双峰→钉默认;上限<40→默认毕业;右偏→选分位非均值;撤销加长 + 收敛失败回退;立即撤销的停留被排除。无眼→手延迟代码。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u14"><h3><span class="uid">U14.</span> 生命周期 reducer(核心) <span class="pill phase">Phase 1</span></h3>
+      <dl><dt>GOAL</dt><dd>拥有那个唯一、串行化、由系统事件与学习毕业共同驱动的状态机。</dd><dt>DEPS</dt><dd>U2(仅事件/状态类型——<code>LearningEvent</code> 在 U2 定义,故 U14 不依赖 U5 拟合逻辑)</dd><dt>REQ</dt><dd>R8, R14–R16, R24</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> 纯 <code>reduce(state, event) -> (state, flags)</code>,event 是 <code>SystemEvent</code> 或 <code>LearningEvent</code>。拥有 <code>requireFreshGaze</code>:唤醒/解锁置位,仅 U4 发的 <code>freshGazeSeen</code> 清除。是两路事件的唯一汇,壳持单实例喂两路流——毕业与锁屏不会竞争两个所有者。相 1 核心(U2 后、U4 前)。</p>
+        <p><span class="lbl">TESTS</span> 表驱动:每个 (态,事件) 对→正确次态+flags;graduated/enabled/calibrated 转移;唤醒置 requireFreshGaze,仅 freshGazeSeen 清;竞态:毕业与锁屏任意序都收敛到安全态(绝不 Active-while-locked)。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u6"><h3><span class="uid">U6.</span> 离线注视模型转换 <span class="pill phase">Phase 2</span></h3>
+      <dl><dt>GOAL</dt><dd>从开源 MIT 权重产出嵌入式 CoreML 模型,带可验证来源。</dd><dt>DEPS</dt><dd>U1</dd><dt>REQ</dt><dd>R1</dd></dl>
+      <details><summary>Approach · Verification</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> <code>coremltools</code> 7+ 经 <code>torch.jit.trace</code> 把 L2CS-Net(ResNet-50 或 MobileOne-S0)转 <code>.mlpackage</code>;<code>Scripts/README.md</code> 记来源权重、commit hash、MIT、预处理——与构建期 hash 校验挂钩的来源凭证。</p>
+        <p><span class="lbl">VERIFY</span> 模型在 <code>MLModel</code> 加载成功、对样例图返回有限 yaw/pitch;构建在 hash 不符时失败。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u7"><h3><span class="uid">U7.</span> 摄像头采集 + Vision/CoreML 注视管线 <span class="pill phase">Phase 2</span> <span class="pill gate">含 2 个 kill-gate</span></h3>
+      <dl><dt>GOAL</dt><dd>从摄像头产出实时 <code>GazeSample</code> 流喂核心;按需真关相机。</dd><dt>DEPS</dt><dd>U2, U6</dd><dt>REQ</dt><dd>R1, R19, R27</dd></dl>
+      <details><summary>Approach · Spikes · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> 串行队列限定的 controller 持 session;<code>nonisolated</code> delegate 取 <code>CVPixelBuffer</code> 后只递 Sendable 数据。Vision ~10Hz;CoreML 在 ANE;输出经 <code>AsyncStream</code> 成 <code>GazeSample</code>。<code>VNDetectFaceLandmarksRequest</code> 返回数组——选最大/最居中的脸;<b>>1 张可信脸</b>(背后有人、屏上视频通话、海报)→低置信/hold,使自信但错的样本永不击穿兜底脊梁。<code>stopRunning()</code> 真关相机/LED;仅「开始收集」动作启采集;绝不存原始帧。</p>
+        <div class="callout"><b>执行尖刺(先于搭功能):</b>(1) 并发:最简串行结构在完整检查下编译过,再考虑 actor;(2) <b>注视精度 kill-criterion</b>(见 Risks):硬性通过线,过不了就回退「先看后按」;(3) <b>静默阅读停顿误切率</b>(见 Risks):纯停留在刻意阅读停顿里的误切率,打字闸覆盖不到的情况。</div>
+        <p><span class="lbl">TESTS</span> 并发编译;<code>stopRunning()</code> 后 isRunning=false;~10Hz 抽帧;多脸→低置信;设备:有脸出合理 yaw/pitch、脸出框置信降(AE6 感知侧);精度+阅读停顿设备门。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u8"><h3><span class="uid">U8.</span> 窗口控制:枚举、聚焦、权限健康 <span class="pill phase">Phase 2</span></h3>
+      <dl><dt>GOAL</dt><dd>枚举窗口矩形、经 Accessibility 切焦点,并监控运行时权限。</dd><dt>DEPS</dt><dd>U2</dd><dt>REQ</dt><dd>R2, R8, R23, R29</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> <code>CGWindowListCopyWindowInfo(.optionOnScreenOnly)</code> → bounds+PID+ownerName(无 Screen Recording;从不读标题)。聚焦 = activate 再 set kAXMainWindow/kAXFocusedWindow + kAXRaiseAction。<code>AXIsProcessTrustedWithOptions</code> onboarding;健康监控轮询并把 AX 错误当撤销→「未授信」态。「存活未最小化」用 <code>kCGWindowLayer</code> 近似(限制写明,KTD12)。最小 AX 面,绝不注入合成事件(R29)。参考 AutoRaise 调用序(不 vendor 其 GPL 代码)。</p>
+        <p><span class="lbl">TESTS</span> 字典→Snapshot 映射(fixture);设备:聚焦 B 使其前置且键入落 B(断言 activate 非仅 raise);AX 拒绝→isTrusted=false、聚焦 no-op;模拟 AX 错→未授信态。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u9"><h3><span class="uid">U9.</span> 打字闸监听 + 全局热键 <span class="pill phase">Phase 2</span></h3>
+      <dl><dt>GOAL</dt><dd>提供打字活动信号(只时刻)与暂停/撤销热键——无第三方依赖。</dd><dt>DEPS</dt><dd>U2</dd><dt>REQ</dt><dd>R7, R10, R18</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> <code>NSEvent.addGlobalMonitorForEvents([.keyDown])</code> 只记时刻(绝不 .characters/修饰键),在边界转成核心 <code>Clock</code> 时基的「击键发生」事件(裸 <code>NSEvent.timestamp</code> 是 mach 启动时基,与 <code>Date</code> 不同)。同一 monitor 检两个硬编码 Cmd/Ctrl 组合键(撤销键给 U4 的 armed-undo)——<b>去掉 <code>KeyboardShortcuts</code> 库</b>,消除供应链与未被要求的可重映射范围。Secure Keyboard Entry 期无事件;近期有活动后的意外静默按「继续抑制一个近窗」处理,使密码输入不会被夺焦。</p>
+        <p><span class="lbl">TESTS</span> 只转发打戳时刻(无内容/flags 进核心);不同 epoch 的击键不会静默失效(时基契约);Secure-Entry 静默保持抑制;暂停/撤销键(AE9 触发侧)。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u10"><h3><span class="uid">U10.</span> 菜单 UI、状态可读、反馈、手动覆盖 <span class="pill phase">Phase 3</span></h3>
+      <dl><dt>GOAL</dt><dd>让每个生命周期态可读,提供切换反馈、手动停留覆盖与必要警告。</dd><dt>DEPS</dt><dd>U7, U8, U9, U14</dd><dt>REQ</dt><dd>R16, R18, R20, R21, R22, R23</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> <code>MenuBarExtra(.window)</code> 显态:idle / collecting(相机开、显式)/ ready / active-武装 / active-被打字抑制 / tracking-lost / paused。Ready 出「启用注视模式」CTA(与提示同措辞)。切换时工具自带指示器使焦点不论主题都明确(R21)。停留滑块(默认 600ms)是手动覆盖(KTD14)。权限拒绝有引导(R23)。屏幕共享警告建议手动暂停(KTD13);导出触发行为数据+口令提示(KTD10)。</p>
+        <p><span class="lbl">TESTS</span> 态→标签/图标纯映射、各态可辨、active-武装 vs 被抑制不同、collecting 读作相机开、tracking-lost 独立(AE6 反馈侧);未授信→re-grant CTA;设备:指示器在深色主题可见、滑块改阈值。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u11"><h3><span class="uid">U11.</span> 4 点校准 <span class="pill phase">Phase 3</span></h3>
+      <dl><dt>GOAL</dt><dd>采个人注视偏移使分区可靠。</dd><dt>DEPS</dt><dd>U3, U7, U10</dd><dt>REQ</dt><dd>R1(校准),支持 R11</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> ~10s 四目标流;核心逐点接受复用 U3 固视闸(仅稳定固视接受,否则重提示该点);核心 <code>CalibrationSolver</code> 从四对拟合仿射/偏移;<code>CalibrationOffset</code> 是核心态,供 U3 的 ZoneMapper 消费。毕业时跑一次,唤醒时重校验(U12,笔记本几何漂移)。<b>U7 精度尖刺过了才搭</b>——不过则被「先看后按」取代。</p>
+        <p><span class="lbl">TESTS</span> solver 把四原始点映射到近显示点;无稳定固视的点重提示;设备:校准后分类在校准前错的地方正确。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u12"><h3><span class="uid">U12.</span> 系统事件、多屏、全屏/Space 挂起、校准重校验 <span class="pill phase">Phase 3</span></h3>
+      <dl><dt>GOAL</dt><dd>由系统事件驱动生命周期 reducer 并安全降级。</dd><dt>DEPS</dt><dd>U7, U8, U11, U14</dd><dt>REQ</dt><dd>R24, R25, F6</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> 观察 <code>NSWorkspace</code> 睡眠/唤醒/屏睡 与 <code>com.apple.screenIsLocked/Unlocked</code> → 喂 reducer,睡眠/锁停采集+挂起、唤醒/解锁置 requireFreshGaze 并<b>重校验校准</b>(KTD12)。<code>didChangeScreenParametersNotification</code> → 去抖屏集 diff,第二块屏限定主屏(R25)。<code>activeSpaceDidChangeNotification</code>+全屏→挂起。只接线,不定义转移逻辑。</p>
+        <p><span class="lbl">TESTS</span> 设备唤醒后首停留不切直到新注视、校准重校验;接第二屏限定主屏、拔回恢复;Space 切换挂起(F6)。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u13"><h3><span class="uid">U13.</span> 加密持久化、保留、导出、擦除 <span class="pill phase">Phase 3</span></h3>
+      <dl><dt>GOAL</dt><dd>安全持久化模型、限保留、支持带警告的口令封装导出、可一键擦除。</dd><dt>DEPS</dt><dd>U5</dd><dt>REQ</dt><dd>R28</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> 实现 <code>ModelStore</code>:序列化参数+近窗(无原始帧、无眼→手样本),AES.GCM(AAD=bundle-id+schema 版本)封,密钥在 Keychain(绑签名身份、WhenUnlockedThisDeviceOnly),写 per-user Application Support、排除备份。无密钥轮换(擦除重学)。「擦除学习数据」删文件+Keychain 项。<b>导出</b>口令封装(用户口令+KDF)、仅参数+校准、带行为数据警告。日志/崩溃报告无敏感数据。</p>
+        <p><span class="lbl">TESTS</span> 往返一致;损坏/错 AAD → open 失败;目录 isExcludedFromBackup=true;擦除后下次启动回 Idle;有 blob 缺 key→新态不崩;导出物仅含参数、只能用口令打开。</p>
+      </div></details>
+    </article>
+
+    <article class="unit" id="u15"><h3><span class="uid">U15.</span> 登录启动 <span class="pill phase">Phase 3</span></h3>
+      <dl><dt>GOAL</dt><dd>以独立、低风险的能力提供登录启动。</dd><dt>DEPS</dt><dd>U1</dd><dt>REQ</dt><dd>无(计划派生能力——否则每次开机要手动重启,削弱免手前提);支持 F6</dd></dl>
+      <details><summary>Approach · Tests</summary><div class="body">
+        <p><span class="lbl">APPROACH</span> <code>SMAppService.mainApp.register()/.unregister()</code>;UI 实时读 <code>.status</code> 而非缓存 bool;暴露 <code>.requiresApproval</code>。与系统事件观察者无共享代码,可独立落地。</p>
+        <p><span class="lbl">TESTS</span> status→开关标签纯映射;设备:切换 register/unregister、.requiresApproval 出引导。</p>
+      </div></details>
+    </article>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Requirements Traceability · 需求追溯</h2>
+    <table><thead><tr><th>需求组</th><th>R-IDs</th><th>单元</th></tr></thead><tbody>
+      <tr><td>感知与目标</td><td class="id">R1–R3</td><td>U3, U6, U7, U8, U11</td></tr>
+      <tr><td>选择与安全</td><td class="id">R4–R10</td><td>U3, U4, U9, U14</td></tr>
+      <tr><td>学习与冷启动</td><td class="id">R11–R17</td><td>U5, U10, U11, U14</td></tr>
+      <tr><td>控制/状态/反馈</td><td class="id">R18–R23</td><td>U7, U8, U9, U10</td></tr>
+      <tr><td>系统事件</td><td class="id">R24, R25, R26†</td><td>U12, U14</td></tr>
+      <tr><td>隐私与信任</td><td class="id">R27–R29‡</td><td>U7, U8, U13</td></tr>
+    </tbody></table>
+    <p class="lbl" style="font-size:.8rem;color:var(--faint)">Flows:F1→U5/U14 · F2→U4/U3/U7 · F3→U9/U4 · F4→U5(重释)· F5→U4/U9 · F6→U12/U14/U15。AE6 跨 U4(逻辑)/U7(感知)/U10(tracking-lost)。<br>* R13 在 KTD5 下重释为有效停留过滤,不采集延迟。† R26 自动暂停延后——仅警告(KTD13),AE10 在 v1 未满足。‡ R29 XPC 隔离延后——v1 进程内(KTD7)。</p>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Scope Boundaries · 范围边界</h2>
+    <h3 class="grp">本期延后(计划内)</h3>
+    <ul class="tight">
+      <li><b>屏幕共享自动暂停(R26/AE10)</b>——v1 发免权限警告。<i>再评估门:在向作者本机之外分发前重审——第三方机密暴露使「仅警告」只够个人单用户。</i></li>
+      <li><b>免权限 XPC 隔离注视子进程(R29 加固)</b>——v1 进程内(KTD7)。<i>再评估门:在分发给作者之外的任何用户、或采集路径引入任何非内置运行时依赖前重审。</i></li>
+      <li><b>眼→手延迟信号</b>——暂存;v1 学最小有意停留(KTD5);origin R13/F4/AE7 重释为有效停留过滤。</li>
+      <li><b>完整遮挡检测</b>——提交时「可见」用近似(当前 Space 内存活未最小化);窗后遮挡延后(KTD12)。</li>
+      <li>会议进程屏幕共享启发式、激活后撤销增益调参(超出有界 nudge)、GazeIntent 式 ML 意图分类器、私有 SkyLight focus-without-raise——均为后续增强。</li>
+    </ul>
+    <h3 class="grp">更久之后(来自 origin)</h3>
+    <p>多显示器一等公民、tmux/iTerm 窗格级、泛化到任意 app、可见停留进度环、阅读 vs 瞄准扫视路径分类、iPhone Continuity Camera 作高精度传感器。</p>
+    <h3 class="grp">本期范围内的退路(来自 origin)</h3>
+    <p>纯停留若过不了任一设备门(注视精度或阅读停顿误切率),「先看后按」键确认是退路——预备不预建。</p>
+    <h3 class="grp">考虑过但未选</h3>
+    <p><b>按需/空闲门控采集</b>(仅靠瞬时触发或键盘空闲后开相机)会一举缩小常开隐私面、LED 常亮成本与进程内爆炸半径,但牺牲用户选择的「无痕常守」手感。v1 故意选常开;在此记录以使取舍显式、非默认继承。</p>
+    <h3 class="grp">本产品身份之外(来自 origin)</h3>
+    <p>注视事件总线、注视即目的地、注视作 AI agent 上下文、注意力门控通知路由、注意力分析——独立产品。</p>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Risks &amp; Dependencies · 风险与依赖</h2>
+    <ul class="tight">
+      <li><b>注视精度 kill-criterion(硬门,U7 尖刺 2)。</b>Phase-2 搭功能前预注册线:在最低规格内置摄像头、≥5 用户、≥2 光照、戴/不戴眼镜、<i>校准后</i> ≥95% 正确分区。相关量是真实笔记本上的分区错误率,非模型 3.9° 基准 MAE。不达线:停下,走「先看后按」退路。</li>
+      <li><b>静默阅读停顿误切率(硬门,U7 尖刺 3)——纯停留赌注的真正考验。</b>打字闸只在击键近窗内生效;<b>刻意的阅读停顿</b>(停下打字去研究相邻日志)是持续可信固视,过所有闸、与提交不可区分。R12 的一瞥/提交分离覆盖不到。测量持续阅读时的误切率;不可接受则这一项就逼出「先看后按」退路。比原始精度更可能成为门。</li>
+      <li><b>Swift 6.2 实时路径并发。</b>先尖刺、最简结构优先(KTD9);<code>@preconcurrency</code> 是最后手段。</li>
+      <li><b>学习收敛。</b>80 分位是否收敛、是否「无痕」未证;分布质量门拒绝拟合宽/多峰分布,默认值+滑块使错值非灾难,撤销率信号标记净负学习器。</li>
+      <li><b>笔记本校准漂移</b>产生兜底抓不住的「自信但错」估计(兜底抓低<i>置信</i>非偏差)——靠唤醒重校验缓解,不当永久值。</li>
+      <li><b>进程内注视管线残余风险</b>(KTD7)——v1 接受;XPC 隔离延后带再评估门。</li>
+      <li><b>屏幕共享数据暴露</b>是第三方机密非用户烦扰(KTD13)——R26 落地前仅靠 v1 警告+手动暂停。</li>
+      <li><b><code>AXIsProcessTrusted</code> 陈旧缓存</b>——无撤销通知;U8 健康监控缓解。</li>
+      <li><b>供应链。</b>无第三方 Swift 运行时依赖(去掉了 <code>KeyboardShortcuts</code>);模型产物构建期校 hash(U6);提交 <code>Package.resolved</code>;v1 无自动更新器。</li>
+      <li><b>依赖:</b>AVFoundation、Vision、CoreML、ApplicationServices/AppKit(全 Apple 原生);<code>coremltools</code> 7+(离线、模型准备);L2CS-Net MIT 权重。无第三方 Swift 包。</li>
+    </ul>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Open Questions · 待决(留给实现)</h2>
+    <ul class="tight">
+      <li>左/中/右 yaw 边界与中区死区宽——设备上对校准后模型调。</li>
+      <li>模型变体:ResNet-50(~90MB/~3.9°)vs MobileOne-S0(~5MB/更高误差)——测真实摄像头精度后选。</li>
+      <li>眼区 ROI(Vision 瞳孔)vs 头姿归一全脸作输入——验瞳孔关键点稳定性(U7)。</li>
+      <li>恢复窗 N 与 R17 撤销 nudge 增益——观察真实撤销后调。</li>
+      <li>毕业数量(≥40 起点)、收集上限时长、「可用」的分布质量阈。</li>
+      <li>阅读停顿误切率(U7 尖刺 3)——纯停留过线,还是这一项逼出「先看后按」退路？</li>
+      <li>校准漂移容忍——偏移多陈旧才产生自信错切,唤醒重校验是否需要更细的漂移检测器(如关键点尺度变化)。</li>
+    </ul>
+  </section>
+
+  <footer class="composition-signal">
+    由 ce-plan 于 2026-06-13 编写 · deepened 2026-06-13 · origin <code>docs/brainstorms/2026-06-13-gaze-terminal-focus-requirements.md</code> · 经研究(5 维)+ 深化(架构/安全/简洁)+ 文档审查(5 视角)加固 · Markdown 规范版(ce-work 输入):<code>docs/plans/2026-06-13-001-feat-gaze-focus-switcher-plan.md</code>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>需求文档：自适应注视焦点切换器（MVP）</title>
+<style>
+  :root{
+    --bg:#fbfaf7; --surface:#ffffff; --ink:#1c1d22; --muted:#5b5e68; --faint:#8a8d97;
+    --accent:#0f7d82; --accent-soft:#e2f2f1; --accent-text:#0a5b5f;
+    --warn-soft:#fbeede; --warn-text:#8a5712; --warn-border:#ecd6ad;
+    --good-soft:#e6f1e4; --good-text:#3a6b32;
+    --danger-soft:#f6e3e0; --danger-text:#9a4634;
+    --border:#e7e4dc; --border-strong:#d6d2c7; --chip:#f1efe9; --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.75; font-feature-settings:"kern","liga";}
+  .wrap{max-width:940px; margin-inline:auto; padding:48px 24px 80px}
+  p,li{max-width:74ch}
+  a{color:var(--accent-text); text-underline-offset:2px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.86em; background:var(--chip); padding:.1em .38em; border-radius:6px}
+  h1{font-size:1.95rem; line-height:1.25; margin:.2em 0 .1em; letter-spacing:-.01em}
+  h2{font-size:1.32rem; margin:0 0 .6em; padding-bottom:.3em; border-bottom:2px solid var(--border)}
+  h3{font-size:1.04rem; margin:1.4em 0 .3em}
+  .eyebrow{font-size:.72rem; letter-spacing:.16em; font-weight:700; color:var(--accent-text); margin:0 0 .2em}
+  section{margin:34px 0; padding-top:6px}
+  .meta{display:flex; flex-wrap:wrap; gap:8px 14px; margin:14px 0 6px; font-size:.86rem; color:var(--muted)}
+  .meta b{color:var(--ink); font-weight:600}
+  .lede{font-size:1.05rem; color:#33353d}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 22px; margin:14px 0}
+  .kd{margin:12px 0; padding-left:14px; border-left:3px solid var(--accent)}
+  .kd b{color:var(--accent-text)}
+  figure{margin:18px 0; padding:16px; background:#fcfbf8; border:1px solid var(--border); border-radius:10px}
+  figure svg{display:block; width:100%; height:auto}
+  figcaption{font-size:.82rem; color:var(--faint); margin-top:10px; text-align:center; max-width:none}
+  .wf-note{font-size:.8rem; color:var(--warn-text); background:var(--warn-soft); border:1px solid var(--warn-border); border-radius:8px; padding:8px 12px; margin-top:10px; max-width:none}
+  table{border-collapse:collapse; width:100%; margin:10px 0 18px; font-size:.93rem}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top}
+  th{font-size:.74rem; letter-spacing:.03em; color:var(--faint); font-weight:700}
+  tbody tr:hover{background:#fcfbf8}
+  td.id{font-weight:700; color:var(--accent-text); white-space:nowrap; font-variant-numeric:tabular-nums}
+  .flow{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 18px; margin:12px 0}
+  .flow .fid{font-weight:700; color:var(--accent)}
+  .flow .lbl{font-size:.72rem; font-weight:700; color:var(--faint); letter-spacing:.03em}
+  .flow ul{margin:.3em 0 0; padding-left:1.1em}
+  .flow li{margin:3px 0}
+  .ae{margin:9px 0; padding:10px 14px; background:var(--surface); border:1px solid var(--border); border-radius:10px}
+  .ae .aeid{font-weight:700; color:var(--accent-text)}
+  .ae .covers{font-size:.74rem; color:var(--faint)}
+  ul.tight{margin:.4em 0}
+  ul.tight li{margin:5px 0}
+  .grouphdr{font-size:.95rem; font-weight:700; color:#34363e; margin:18px 0 2px}
+  .pill{display:inline-block; font-size:.72rem; font-weight:600; padding:2px 9px; border-radius:999px; border:1px solid var(--border-strong); background:var(--chip); color:var(--muted)}
+  .pill.bet{background:var(--warn-soft); color:var(--warn-text); border-color:var(--warn-border)}
+  .pill.safe{background:var(--good-soft); color:var(--good-text); border-color:#c4ddbd}
+  footer.composition-signal{margin-top:48px; padding-top:16px; border-top:1px solid var(--border); font-size:.78rem; color:var(--faint)}
+  hr.sep{border:none; border-top:1px solid var(--border); margin:34px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">需求文档 · ce-brainstorm</p>
+  <h1>自适应注视焦点切换器（MVP）</h1>
+  <div class="meta">
+    <span><b>date</b> <time datetime="2026-06-13">2026-06-13</time></span>
+    <span><b>topic</b> gaze-terminal-focus</span>
+  </div>
+  <p class="lede">一个 macOS 菜单栏小工具：用摄像头追踪视线，当你的目光在某个并排的终端窗口上停留足够久，就把键盘焦点切过去——不用键、不用鼠标。只要它对目标不确定（你在打字、置信度低、目标有歧义），就<b>按住焦点不动</b>；同时从你平时手动切窗口的行为里学你个人的「看了多久才动手」节奏，让切换逐渐变得无痕。</p>
+
+  <section>
+    <h2>Problem Frame · 问题背景</h2>
+    <p>macOS 上没有任何工具按「你看哪里」来移动窗口焦点。在 2–3 个并排终端之间切换，意味着伸手摸鼠标或在心流中循环 Cmd-Tab——对一个本来全靠键盘的开发者是一份小而持续的税。苹果的 Eye Tracking 只在 iOS/iPadOS 上、且不对第三方开放；Vision Pro 的「看着即聚焦 + 捏合」验证了范式，但在 Mac 上无处可寻。</p>
+    <p>这个机会真实，是因为这活儿<b>粗粒度且低频</b>：开发者每小时切焦点是几十次量级，不是上千次，而且只需要分辨两三个很宽的窗口。粗注视（左/中/右）对这么宽的窗口足以越过摄像头 ~50mm 的误差。难点从来不是感知——而是做一个<b>永远不在错误时刻抢焦点</b>的免手切换。那个失败（你读日志时焦点跳走，接下来的键全打错窗口）正是会让人第一天就卸载的原因，也是整个 MVP 的设计核心。贯穿始终的总原则是：<b>一旦不确定，就不切。</b></p>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Key Decisions · 关键决策</h2>
+    <div class="kd"><p><b>纯停留、不按键——一个刻意的、被防御过的赌注。</b> <span class="pill bet">较高风险的赌注</span> 视线在窗口上停留超过个人阈值就提交焦点，不用组合键、点击或眨眼。这是对原始需求最「魔法」的解读，也是你明确的选择。它也是<i>较冒险</i>的那个：上游 ideation 把「先看后按」(注视瞄准、按键提交) 排为更安全的默认，把零确认停留只留作「勇敢模式」。本文档<b>有意</b>下这个勇敢模式的赌注，但靠四件事一起防御——打字闸 (R7)、把阈值设在「随意一瞥」之上 (R12)、通用安全兜底 (R8)、以及误切恢复手段 (R10)。<b>退路：</b>若「零抢焦点」成功标准在测试中不达标，「先看后按」键确认模式是<b>本期范围内</b>的退路（是预案，不只是延后）。</p></div>
+    <div class="kd"><p><b>真眼球注视，不是头部姿态。</b> 单屏并排的两个终端只差几度，你几乎不转头，是在<i>转眼睛</i>。头部姿态（更易、免校准）分不清同屏窗口，所以 MVP 必须用真正的注视估计。</p></div>
+    <div class="kd"><p><b>窗口无关的目标解析；「终端」是验证焦点，不是能力上限。</b> 工具把视线映射到它落入的那个<i>窗口矩形</i>。解析逻辑里没有任何终端专属的东西，所以 v1 对任意标准窗口都成立，不会去建以后泛化时还得拆掉的终端检测耦合。把<i>验证</i>范围收在并排终端上让测试诚实；同时这意味着只读窗口<i>几何</i>（不读标题或应用身份），从而<b>不需要 Screen Recording 权限</b>。</p></div>
+    <div class="kd"><p><b>个人「看了多久才动手」延迟是无痕的机制——有界，不无限。</b> 眼睛领先手：动作之前视线先落到目标上。「视线到达窗口」到「随后手动操作」之间的间隔，是这个用户「我已经决定了」那一刻的零标注度量，阈值由它导出 (R11)，于是自动切换正好卡在你本来也会动手的时刻。两个诚实的限制塑造了设计：这个间隔的<i>大小</i>与情境相关（预先决定的切换又快又紧；反应式的「瞥一眼再决定」又慢又散），所以阈值用稳健统计量、且放在「随意一瞥」之上 (R12)，而非原始均值；而这个信号在鼠标驱动的收集期最丰富、转纯注视后变弱，所以模型<b>在收集期收敛、之后稳定</b>，而不是永远复利 (R17)。</p></div>
+    <div class="kd"><p><b>渐进冷启动，有界到永远不会把你卡住。</b> 首次运行只观察、不切任何东西 (R14)。学到把握后弹一次提示问是否启用注视模式；若在有界时间内达不到把握（或你的延迟分布太宽给不出可信阈值），它会提议用一个稳妥默认值毕业，而不是无限等待；你也可以随时从菜单手动启用 (R15, R16)。观察期基本无感，因为信号来自你本来就在产生的行为。</p></div>
+    <div class="kd"><p><b>全程本地，模型越用越准——定位为质量收益，不是护城河。</b> <span class="pill safe">已纠偏</span> 所有注视推断与学习都在本地，数据不出 Mac (R27)。模型越来越贴合你是一种 UX 质量收益，<i>不是</i>锁定/留存武器——对一个免费、本地、单用户工具，那种说法是空的，还会把设计推向「故意不让模型可移植」这种伤害用户的方向。所以模型设计上<b>可导出</b> (R28)。真正持久的优势是市场空白，不是重学成本。</p></div>
+    <div class="kd"><p><b>安全兜底是脊梁。</b> 每一个不确定的条件都归结到「按住当前焦点、什么都不切」(R8)。这一条规则吸收了：注视置信度低、目标有歧义、目标在停留途中消失、唤醒后估计过时、权限丢失、全屏/单窗口的 Space、以及第二块屏幕出现——让每一种都成为<i>已定义的安全降级</i>，而非未定义行为。</p></div>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Lifecycle · 生命周期</h2>
+    <p>工具在这些状态间流转；只有 Active 才真正切焦点，任何不确定都会退回到「按住焦点」。</p>
+    <figure>
+      <svg viewBox="0 0 900 250" role="img" aria-label="状态图：Collecting 收集、Ready 就绪、Active 激活、Paused 暂停、Suspended 挂起之间的转移。">
+        <defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#0f7d82"/></marker></defs>
+        <!-- nodes -->
+        <rect x="24" y="100" width="120" height="50" rx="10" fill="#f1efe9" stroke="#d6d2c7" stroke-width="1.5"/>
+        <text x="84" y="121" font-size="13" font-weight="700" fill="#1c1d22" text-anchor="middle">Collecting</text>
+        <text x="84" y="138" font-size="10.5" fill="#5b5e68" text-anchor="middle">只观察 · 不切</text>
+        <rect x="214" y="100" width="120" height="50" rx="10" fill="#fbeede" stroke="#ecd6ad" stroke-width="1.5"/>
+        <text x="274" y="121" font-size="13" font-weight="700" fill="#8a5712" text-anchor="middle">Ready</text>
+        <text x="274" y="138" font-size="10.5" fill="#8a5712" text-anchor="middle">菜单可启用</text>
+        <rect x="404" y="100" width="120" height="50" rx="10" fill="#e2f2f1" stroke="#0f7d82" stroke-width="2.2"/>
+        <text x="464" y="121" font-size="13" font-weight="700" fill="#0a5b5f" text-anchor="middle">Active</text>
+        <text x="464" y="138" font-size="10.5" fill="#0a5b5f" text-anchor="middle">注视切焦点</text>
+        <rect x="594" y="30" width="120" height="50" rx="10" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.5"/>
+        <text x="654" y="51" font-size="13" font-weight="700" fill="#1c1d22" text-anchor="middle">Paused</text>
+        <text x="654" y="68" font-size="10.5" fill="#5b5e68" text-anchor="middle">相机关闭</text>
+        <rect x="594" y="170" width="120" height="50" rx="10" fill="#f6e3e0" stroke="#d8b3a8" stroke-width="1.5"/>
+        <text x="654" y="191" font-size="13" font-weight="700" fill="#9a4634" text-anchor="middle">Suspended</text>
+        <text x="654" y="208" font-size="10.5" fill="#9a4634" text-anchor="middle">睡眠/锁屏/共享</text>
+        <!-- edges -->
+        <line x1="144" y1="125" x2="210" y2="125" stroke="#0f7d82" stroke-width="2" marker-end="url(#a)"/>
+        <text x="177" y="116" font-size="10" fill="#5b5e68" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">够把握/到上限</text>
+        <line x1="334" y1="125" x2="400" y2="125" stroke="#0f7d82" stroke-width="2" marker-end="url(#a)"/>
+        <text x="367" y="116" font-size="10" fill="#5b5e68" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">用户启用</text>
+        <line x1="524" y1="112" x2="590" y2="66" stroke="#0f7d82" stroke-width="2" marker-end="url(#a)"/>
+        <text x="566" y="84" font-size="10" fill="#5b5e68" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">暂停</text>
+        <line x1="590" y1="60" x2="528" y2="106" stroke="#b8b4a9" stroke-width="1.6" marker-end="url(#a)"/>
+        <text x="566" y="40" font-size="10" fill="#8a8d97" text-anchor="middle">恢复</text>
+        <line x1="524" y1="138" x2="590" y2="184" stroke="#9a4634" stroke-width="2" marker-end="url(#a)"/>
+        <text x="566" y="170" font-size="10" fill="#9a4634" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">睡眠/共享</text>
+        <line x1="590" y1="190" x2="528" y2="144" stroke="#b8b4a9" stroke-width="1.6" marker-end="url(#a)"/>
+        <text x="540" y="214" font-size="10" fill="#8a8d97" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">唤醒后需新的可信注视</text>
+        <!-- self loops (text only) -->
+        <text x="84" y="92" font-size="9.5" fill="#8a8d97" text-anchor="middle">↻ 采样</text>
+        <text x="274" y="92" font-size="9.5" fill="#8a8d97" text-anchor="middle">↻ 持续观察</text>
+        <text x="464" y="92" font-size="9.5" fill="#8a8d97" text-anchor="middle">↻ 停留则切（除非不确定）</text>
+      </svg>
+      <figcaption>启用前永不切焦点；Ready 持续观察且菜单常驻启用入口，所以拒绝过提示的用户不会被卡住。</figcaption>
+    </figure>
+
+    <p>Active 内部的提交决策是一串安全兜底闸——任何一个「否」都按住焦点：</p>
+    <figure>
+      <svg viewBox="0 0 760 300" role="img" aria-label="提交决策流程：固视、置信度与目标数、打字闸、阈值与不同窗口、提交前目标仍存活，任一不满足则按住焦点。">
+        <defs><marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#0f7d82"/></marker>
+        <marker id="bh" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#9a4634"/></marker></defs>
+        <!-- hold box on right -->
+        <rect x="560" y="120" width="172" height="58" rx="10" fill="#f6e3e0" stroke="#d8b3a8" stroke-width="1.6"/>
+        <text x="646" y="146" font-size="12.5" font-weight="700" fill="#9a4634" text-anchor="middle">按住焦点</text>
+        <text x="646" y="164" font-size="11" fill="#9a4634" text-anchor="middle">不切</text>
+        <!-- chain -->
+        <g font-size="11.5" fill="#1c1d22" text-anchor="middle">
+          <rect x="40" y="14" width="240" height="40" rx="8" fill="#ffffff" stroke="#d6d2c7" stroke-width="1.4"/>
+          <text x="160" y="39">在窗口 X 上稳定固视</text>
+          <rect x="40" y="74" width="240" height="44" rx="8" fill="#fcfbf8" stroke="#d6d2c7" stroke-width="1.4"/>
+          <text x="160" y="93">置信度OK 且 ≥2 个存活目标？</text>
+          <text x="160" y="109" font-size="10" fill="#8a8d97">否 →</text>
+          <rect x="40" y="138" width="240" height="44" rx="8" fill="#fcfbf8" stroke="#d6d2c7" stroke-width="1.4"/>
+          <text x="160" y="157">当前窗口最近在打字？</text>
+          <text x="160" y="173" font-size="10" fill="#8a8d97">是 →</text>
+          <rect x="40" y="202" width="240" height="44" rx="8" fill="#fcfbf8" stroke="#d6d2c7" stroke-width="1.4"/>
+          <text x="160" y="221">X≠当前 且 停留≥个人阈值？</text>
+          <text x="160" y="237" font-size="10" fill="#8a8d97">否 →</text>
+          <rect x="40" y="262" width="240" height="34" rx="8" fill="#fcfbf8" stroke="#d6d2c7" stroke-width="1.4"/>
+          <text x="160" y="284">X 此刻仍存活可见？ 否 →</text>
+        </g>
+        <!-- down arrows -->
+        <g stroke="#0f7d82" stroke-width="1.8">
+          <line x1="160" y1="54" x2="160" y2="72" marker-end="url(#b)"/>
+          <line x1="160" y1="118" x2="160" y2="136" marker-end="url(#b)"/>
+          <line x1="160" y1="182" x2="160" y2="200" marker-end="url(#b)"/>
+          <line x1="160" y1="246" x2="160" y2="260" marker-end="url(#b)"/>
+        </g>
+        <!-- hold arrows to the right -->
+        <g stroke="#9a4634" stroke-width="1.5">
+          <line x1="280" y1="96" x2="556" y2="140" marker-end="url(#bh)"/>
+          <line x1="280" y1="160" x2="556" y2="150" marker-end="url(#bh)"/>
+          <line x1="280" y1="224" x2="556" y2="156" marker-end="url(#bh)"/>
+          <line x1="280" y1="279" x2="556" y2="166" marker-end="url(#bh)"/>
+        </g>
+        <!-- success -->
+        <rect x="360" y="262" width="372" height="34" rx="8" fill="#e2f2f1" stroke="#0f7d82" stroke-width="2"/>
+        <text x="546" y="284" font-size="12" font-weight="700" fill="#0a5b5f" text-anchor="middle">是 → 切到 X · 显示指示 · 提供撤销</text>
+        <line x1="280" y1="279" x2="356" y2="279" stroke="#0f7d82" stroke-width="1.8" marker-end="url(#b)"/>
+      </svg>
+      <figcaption>四道闸全过才切；任何一道不满足都退回按住焦点。这就是「永不在错误时刻抢焦点」的结构保证。</figcaption>
+    </figure>
+
+    <p>学习信号——在鼠标驱动期被动采集：</p>
+    <figure>
+      <svg viewBox="0 0 620 150" role="img" aria-label="时序：视线在 t0 到达窗口 X，手在 t1 启动动作，个人延迟 = t1 减 t0；动作落在 X 才是有效样本。">
+        <line x1="80" y1="30" x2="80" y2="130" stroke="#b8b4a9" stroke-width="1.4"/>
+        <line x1="300" y1="30" x2="300" y2="130" stroke="#b8b4a9" stroke-width="1.4"/>
+        <line x1="540" y1="30" x2="540" y2="130" stroke="#b8b4a9" stroke-width="1.4"/>
+        <text x="80" y="22" font-size="12" font-weight="700" fill="#0a5b5f" text-anchor="middle">眼睛</text>
+        <text x="300" y="22" font-size="12" font-weight="700" fill="#1c1d22" text-anchor="middle">手</text>
+        <text x="540" y="22" font-size="12" font-weight="700" fill="#1c1d22" text-anchor="middle">窗口 X</text>
+        <defs><marker id="c" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#0f7d82"/></marker></defs>
+        <line x1="82" y1="58" x2="536" y2="58" stroke="#0f7d82" stroke-width="1.8" marker-end="url(#c)"/>
+        <text x="300" y="50" font-size="11" fill="#0a5b5f" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">视线到达 X（t0）</text>
+        <line x1="302" y1="98" x2="536" y2="98" stroke="#0f7d82" stroke-width="1.8" marker-end="url(#c)"/>
+        <text x="420" y="90" font-size="11" fill="#0a5b5f" text-anchor="middle" paint-order="stroke" stroke="#fcfbf8" stroke-width="3">鼠标/Cmd-Tab 启动（t1）</text>
+        <text x="300" y="124" font-size="11" fill="#5b5e68" text-anchor="middle">个人延迟 = t1 − t0 ·  动作落在 X → 有效样本，否则丢弃</text>
+      </svg>
+      <figcaption>零标注地量出你本人「看了多久才动手」，阈值由它的稳健统计量导出。</figcaption>
+    </figure>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Key Flows · 关键流程</h2>
+    <div class="flow"><span class="fid">F1.</span> 冷启动收集与有界毕业
+      <ul><li><span class="lbl">触发</span> 首次启动（权限已授予）或模型重置。</li>
+      <li><span class="lbl">步骤</span> 观察视线 + 手动切焦点动作，采集「看-动手」样本，不切任何东西，显示收集进度。够把握时弹一次提示启用；若先到收集上限，则提议用稳妥默认值毕业。</li>
+      <li><span class="lbl">结果</span> 启用 → Active；拒绝或还没提示 → 留在 Collecting/Ready，菜单常驻启用入口。</li>
+      <li><span class="lbl">覆盖</span> R11, R12, R13, R14, R15, R16, R22</li></ul></div>
+    <div class="flow"><span class="fid">F2.</span> Active 停留切换（happy path，安全兜底门控）
+      <ul><li><span class="lbl">触发</span> Active 下视线落到非当前窗口。</li>
+      <li><span class="lbl">步骤</span> 滤掉扫视；仅当置信度够且 ≥2 个存活目标、用户未在打字、停留超过个人阈值、且提交时目标仍存活可见时，raise + 设键盘焦点并显示切换指示。</li>
+      <li><span class="lbl">结果</span> 被注视窗口激活；切换伴随可察觉信号与撤销手段。</li>
+      <li><span class="lbl">覆盖</span> R4, R5, R6, R8, R9, R10, R21</li></ul></div>
+    <div class="flow"><span class="fid">F3.</span> 打字闸抑制
+      <ul><li><span class="lbl">触发</span> 当前窗口最近有按键。</li>
+      <li><span class="lbl">步骤</span> 打字期间抑制切换；停顿后重新武装。菜单反映「武装/抑制」。</li>
+      <li><span class="lbl">结果</span> 任务中读另一窗口绝不抢焦点。</li>
+      <li><span class="lbl">覆盖</span> R7, R20</li></ul></div>
+    <div class="flow"><span class="fid">F4.</span> 被动学习采样
+      <ul><li><span class="lbl">触发</span> 视线到达后随即有手动切焦点动作。</li>
+      <li><span class="lbl">步骤</span> 仅当手动动作落在被注视的同一窗口才记录「视线→动作」间隔与映射，否则丢弃。激活后仍低量采集以刷新样本。</li>
+      <li><span class="lbl">结果</span> 个人阈值与校准在收集期收敛、之后保持刷新。</li>
+      <li><span class="lbl">覆盖</span> R11, R12, R13, R17</li></ul></div>
+    <div class="flow"><span class="fid">F5.</span> 误切恢复
+      <ul><li><span class="lbl">触发</span> 一次你不想要的自动切换。</li>
+      <li><span class="lbl">步骤</span> 切换给出可察觉、有时限的信号；用户在 N 秒内触发撤销动作恢复原焦点。被撤销的切换作为负学习信号回灌。</li>
+      <li><span class="lbl">结果</span> 焦点归位；阈值随时间加长。</li>
+      <li><span class="lbl">覆盖</span> R10, R17, R21</li></ul></div>
+    <div class="flow"><span class="fid">F6.</span> 暂停、挂起与降级
+      <ul><li><span class="lbl">触发</span> 用户暂停；或系统睡眠/锁屏/登出；或开始录屏/共享；或注视跟踪丢失；或权限被撤销。</li>
+      <li><span class="lbl">步骤</span> 切换停止、相机停采（手动暂停、睡眠/锁屏、录屏/共享）；跟踪丢失或权限丢失降到明确的非激活态。唤醒/恢复后首次切换前需要新的可信注视。</li>
+      <li><span class="lbl">结果</span> 焦点不动；绝不在过时或低置信估计上切换；菜单始终显示原因。</li>
+      <li><span class="lbl">覆盖</span> R8, R18, R19, R23, R24, R25, R26</li></ul></div>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Requirements · 需求</h2>
+
+    <div class="grouphdr">感知与目标解析</div>
+    <table><thead><tr><th style="width:48px">ID</th><th>需求</th></tr></thead><tbody>
+      <tr id="r1"><td class="id">R1.</td><td>工具用 Mac 摄像头估计用户的屏上注视点，精度足以在正常坐姿距离下分辨 2–3 个并排窗口。</td></tr>
+      <tr id="r2"><td class="id">R2.</td><td>可选目标是实际的屏上窗口矩形，实时映射；视线归属到包含它的那个窗口。目标解析只读窗口几何（不读标题/应用身份），且窗口无关——v1 以终端为验证对象，但不建终端专属过滤。</td></tr>
+      <tr id="r3"><td class="id">R3.</td><td>遇到歧义时不切、而非猜：视线落在歧义区（靠近共享边界或窗口重叠处）、窗口多到注视无法可靠区分、或窗口太小无法分辨时，一律不切。</td></tr>
+    </tbody></table>
+
+    <div class="grouphdr">选择与安全（永不在错误时刻抢焦点）</div>
+    <table><thead><tr><th style="width:48px">ID</th><th>需求</th></tr></thead><tbody>
+      <tr id="r4"><td class="id">R4.</td><td>Active 态下，焦点仅靠注视停留提交——不需要键、点击、眨眼或语音。</td></tr>
+      <tr id="r5"><td class="id">R5.</td><td>滤除途中的眼动（扫视）；只有稳定固视才能开始计停留。</td></tr>
+      <tr id="r6"><td class="id">R6.</td><td>切换仅在对<i>不同于</i>当前窗口的持续、可信固视上触发；当前窗口零成本保持焦点（粘滞）。对已聚焦窗口的停留是 no-op——不调用聚焦、不重触发切换指示。</td></tr>
+      <tr id="r7"><td class="id">R7.</td><td>当用户正在当前窗口打字时，注视切换被抑制，停顿片刻后才重新武装。</td></tr>
+      <tr id="r8"><td class="id">R8.</td><td>目标不确定时一律安全兜底为粘滞焦点：注视置信度低、未检测到人脸/眼睛、当前 Space 上存活目标少于两个、唤醒后估计过时、或权限丢失——都归结到「按住当前焦点、什么都不切」，并在菜单态反映。</td></tr>
+      <tr id="r9"><td class="id">R9.</td><td>提交前目标重校验：设焦点时目标必须存活可见；若它在停留途中关闭、退出、最小化或被遮挡，则中止（no-op）。停留途中新出现在视线下的窗口不会追溯性满足进行中的停留。</td></tr>
+      <tr id="r10"><td class="id">R10.</td><td>恢复：每次自动切换都给出可察觉、有时限的「发生了切换」信号，并有明确的撤销动作恢复原焦点（如暂停热键在 N 秒内撤销最近一次切换，或专用 undo）。</td></tr>
+    </tbody></table>
+
+    <div class="grouphdr">学习与冷启动</div>
+    <table><thead><tr><th style="width:48px">ID</th><th>需求</th></tr></thead><tbody>
+      <tr id="r11"><td class="id">R11.</td><td>工具测量用户「视线到达 → 手动动作」的延迟，并用它的稳健统计量（而非原始均值）导出停留阈值。</td></tr>
+      <tr id="r12"><td class="id">R12.</td><td>阈值把有意提交与随意阅读一瞥分开：学习「提交延迟」与「随意一瞥停留」两个分布，把阈值放在一瞥范围之上，使非打字的阅读停顿不触发切换。</td></tr>
+      <tr id="r13"><td class="id">R13.</td><td>只有当手动动作落在被注视的同一窗口，样本才计数；无关的鼠标移动丢弃。</td></tr>
+      <tr id="r14"><td class="id">R14.</td><td>首次运行进入 Collecting 态，只观察、不切任何东西。</td></tr>
+      <tr id="r15"><td class="id">R15.</td><td>收集有界：达到把握时弹一次提示启用；若在有界时间内达不到把握、或延迟分布太宽/多峰给不出可信阈值，工具提议用稳妥默认值毕业，而非把用户卡住。用户也可随时从菜单手动启用。</td></tr>
+      <tr id="r16"><td class="id">R16.</td><td>Ready 态：工具持续观察，菜单常驻一个清晰带标签、与提示同措辞的「启用注视模式」入口。仅在用户同意后激活；拒绝过提示的用户因菜单入口常驻而不会被卡住。</td></tr>
+      <tr id="r17"><td class="id">R17.</td><td>激活后用更粗的可用信号继续适应：用户在 N 秒内撤销的切换是负信号（加长阈值），偶发的手动切换被重新挖成新的延迟样本。模型被理解为收集期收敛、之后稳定，而非无限锐化。</td></tr>
+    </tbody></table>
+
+    <div class="grouphdr">控制、状态与反馈</div>
+    <table><thead><tr><th style="width:48px">ID</th><th>需求</th></tr></thead><tbody>
+      <tr id="r18"><td class="id">R18.</td><td>全局热键 + 菜单栏开关随时暂停/恢复注视切换。</td></tr>
+      <tr id="r19"><td class="id">R19.</td><td>暂停/关闭态下，相机采集停止——不只是软件静音。</td></tr>
+      <tr id="r20"><td class="id">R20.</td><td>菜单栏显示当前状态，至少区分：collecting、ready、active-武装、active-被打字闸抑制、tracking-lost、paused。</td></tr>
+      <tr id="r21"><td class="id">R21.</td><td>切换时，被聚焦的新窗口由工具自带的补充指示明确标出，而非只靠 macOS 原生焦点外观（深色/透明终端主题常把它压掉）。</td></tr>
+      <tr id="r22"><td class="id">R22.</td><td>收集期间，工具显示距离「就绪」的进度，让用户知道还差多少能毕业。</td></tr>
+      <tr id="r23"><td class="id">R23.</td><td>在 Accessibility 与 Camera 权限授予前，工具显示清晰的非激活态并引导授权；绝不静默失败。</td></tr>
+    </tbody></table>
+
+    <div class="grouphdr">系统事件</div>
+    <table><thead><tr><th style="width:48px">ID</th><th>需求</th></tr></thead><tbody>
+      <tr id="r24"><td class="id">R24.</td><td>显示器睡眠、锁屏或登出时，相机停采、切换挂起；唤醒后首次切换前需要新的可信注视，绝不在过时估计上抢焦点。</td></tr>
+      <tr id="r25"><td class="id">R25.</td><td>运行时环境变化安全降级：接入第二块屏 → 跟踪限定到主屏、忽略其它屏窗口；全屏或目标少于两个的 Space → 切换失效（inert）；运行时权限被撤销 → 明确的禁用态。</td></tr>
+      <tr id="r26"><td class="id">R26.</td><td>当录屏或屏幕共享会话进行中，工具自动暂停切换（或显示常驻警告），使焦点变化不会把另一个窗口的内容泄露给观看者。</td></tr>
+    </tbody></table>
+
+    <div class="grouphdr">隐私与信任</div>
+    <table><thead><tr><th style="width:48px">ID</th><th>需求</th></tr></thead><tbody>
+      <tr id="r27"><td class="id">R27.</td><td>所有注视推断与学习数据留在本地；图像或注视数据不出 Mac，并遵守 macOS 相机使用指示灯。</td></tr>
+      <tr id="r28"><td class="id">R28.</td><td>存储的模型与样本视为敏感行为数据：放在沙盒容器、排除出云/Time Machine 备份、静态加密。原始样本在模型处理后删除（或在有界保留窗口内删除），长期只保留导出的阈值/校准参数。模型可由用户导出。</td></tr>
+      <tr id="r29"><td class="id">R29.</td><td>Accessibility 授权是高价值信任边界：工具只申请所需的最小 API 面，把任何第三方注视估计组件跑在没有 Accessibility 权限的沙盒子进程里，且只改窗口焦点——绝不注入合成键鼠事件。</td></tr>
+    </tbody></table>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Acceptance Examples · 验收示例</h2>
+    <div class="ae"><span class="aeid">AE1.</span> <span class="covers">覆盖 F2 / R4, R6</span><br><b>给定</b> 注视模式激活、焦点在左终端，<b>当</b> 用户在右终端保持稳定固视超过个人停留阈值，<b>则</b> 焦点移到右终端。</div>
+    <div class="ae"><span class="aeid">AE2.</span> <span class="covers">覆盖 F3 / R7</span><br><b>给定</b> 用户正在左终端打字，<b>当</b> 他瞥右终端读一秒日志，<b>则</b> 焦点留在左终端，按键继续落在那里。</div>
+    <div class="ae"><span class="aeid">AE3.</span> <span class="covers">覆盖 F2 / R5, R12</span><br><b>给定</b> 注视模式激活，<b>当</b> 用户在阅读停顿中扫过或短暂停在右终端但未超提交阈值，<b>则</b> 不发生切换。</div>
+    <div class="ae"><span class="aeid">AE4.</span> <span class="covers">覆盖 F2 / R9</span><br><b>给定</b> 用户已在右终端停留，<b>当</b> 该窗口在提交前一刻关闭或最小化，<b>则</b> 切换中止（no-op），焦点留在左终端。</div>
+    <div class="ae"><span class="aeid">AE5.</span> <span class="covers">覆盖 F2 / R6</span><br><b>给定</b> 焦点在左终端，<b>当</b> 用户视线停在同一个左终端，<b>则</b> 什么都不发生——不重聚焦、不出切换指示。</div>
+    <div class="ae"><span class="aeid">AE6.</span> <span class="covers">覆盖 F2 / R8</span><br><b>给定</b> 注视模式激活，<b>当</b> 摄像头被遮挡或用户看向屏幕之外，<b>则</b> 工具按住当前焦点、不切，并显示 tracking-lost 状态。</div>
+    <div class="ae"><span class="aeid">AE7.</span> <span class="covers">覆盖 F4 / R13</span><br><b>给定</b> 任意状态，<b>当</b> 用户视线停在右终端、随后点进<i>左</i>终端，<b>则</b> 不记录学习样本。</div>
+    <div class="ae"><span class="aeid">AE8.</span> <span class="covers">覆盖 F1 / R14, R15</span><br><b>给定</b> 首次运行，<b>当</b> 用户正常工作，<b>则</b> 在模型达到把握并被用户接受、或用户从菜单启用之前，不发生任何焦点切换。</div>
+    <div class="ae"><span class="aeid">AE9.</span> <span class="covers">覆盖 F5 / R10</span><br><b>给定</b> 一次用户不想要的自动切换，<b>当</b> 他在恢复窗口内触发撤销，<b>则</b> 原焦点恢复，且该事件作为负学习信号回灌。</div>
+    <div class="ae"><span class="aeid">AE10.</span> <span class="covers">覆盖 F6 / R26</span><br><b>给定</b> 注视模式激活，<b>当</b> 录屏或屏幕共享会话开始，<b>则</b> 切换自动暂停（或出现常驻警告）。</div>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Success Criteria · 成功标准</h2>
+    <ul class="tight">
+      <li>打字零抢焦点：测试中，当前窗口的连续打字期间不触发任何自动切换。</li>
+      <li>阅读停顿不误切：阈值落在用户随意一瞥之上，模糊或不确定的注视产生「不切」而非误切。</li>
+      <li>在可信固视上可靠分辨 2–3 个并排窗口。</li>
+      <li>「无痕」手感：收集后，自动切换卡在用户自然的「看-动手」时刻——主观上不抢跑也不迟钝。</li>
+      <li>有界 onboarding：用户在一个现实会话内达到可用的 Active 态——通过有把握毕业、收集上限默认值、或手动启用——绝不被卡在 Collecting。</li>
+      <li>可恢复：误切可察觉、一个动作可撤销，且用户总能通过工具自带指示分辨焦点在哪。</li>
+      <li>信任控制：暂停/恢复即时且明显；在跟踪丢失、睡眠、屏幕共享或权限撤销时降级到明确的安全态。</li>
+    </ul>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Scope Boundaries · 范围边界</h2>
+    <h3>本期延后</h3>
+    <ul class="tight">
+      <li>多显示器、笔记本 + 外接屏（v1 限定主屏）。</li>
+      <li>tmux / iTerm 窗格级选择（子窗口目标对摄像头精度太窄）。</li>
+      <li>泛化到任意应用或工作区/项目区域（机制已允许，v1 只是不验证它）。</li>
+      <li>可见的停留进度环 + 看走取消（用打字闸 + 阈值高于一瞥 + 恢复手段替代）。</li>
+      <li>超出打字闸与一瞥/提交阈值的「阅读 vs 瞄准」扫视路径分类。</li>
+      <li>iPhone Continuity Camera（TrueDepth）作为更高精度传感器。</li>
+    </ul>
+    <h3>本期范围内的退路（非延后）</h3>
+    <ul class="tight">
+      <li>若纯停留在测试中没通过「零抢焦点」标准，「先看后按」键确认模式是退路。它作为预案、不预先构建，但明确在 MVP 的风险范围之内。</li>
+    </ul>
+    <h3>本产品身份之外</h3>
+    <p>这些是 ideation 里的独立产品，不是焦点切换器的 v1 特性：通用的注视「注意力事件总线」、注视即目的地（「把这个发到我正看的终端」）、注视作为 AI 编码 agent 的上下文、注意力门控的通知路由、以及注意力分析/热力图。</p>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Dependencies / Assumptions · 依赖与假设</h2>
+    <ul class="tight">
+      <li>必需 macOS Accessibility 权限（设窗口焦点）与 Camera 权限（注视估计）；两者授予前工具不激活。<b>不需要 Screen Recording 权限</b>，因为目标解析只读窗口几何、不读标题/应用身份（R2）。</li>
+      <li>Accessibility 授权很宽——能读改任意窗口的焦点状态——所以被当作高价值信任边界（R29）。第三方注视库的被攻破不得借此转为键盘记录或事件注入。</li>
+      <li>摄像头注视估计经校准后，在正常坐姿距离能可靠分辨左/中/右。（假设——由 `ce-plan` 验证估计方案与可达精度。）</li>
+      <li>眼睛领先手：视线先于手动动作，所以「视线起点 → 动作起点」间隔是有效的个人信号。其<i>方向</i>已被充分确立；其<i>大小</i>与情境相关，所以阈值取稳健统计量并放在随意一瞥之上（R11, R12）。</li>
+      <li>用户在冷启动期产生足够的手动切焦点动作来训练模型；收集上限 + 默认毕业（R15）界定了「产生不够」的风险。</li>
+      <li>v1 面向单台 Apple Silicon Mac、单用户、单显示器。</li>
+    </ul>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Outstanding Questions · 待决问题</h2>
+    <h3>规划前需解决</h3>
+    <p>无阻塞项。纯停留 vs 键确认的赌注已作为带退路的刻意决策记录在案（见关键决策）；用户已确认纯停留。</p>
+    <h3>留给规划</h3>
+    <ul class="tight">
+      <li>注视估计方案与库，以及校准 UX（显式快速校准 vs 纯被动自校准）。</li>
+      <li>收集上限值与触发毕业提示的「足够把握」判据——由「一个典型开发会话产生多少合格样本」的估计来界定。</li>
+      <li>如何把「随意一瞥」分布与「提交延迟」分布分开，以及个性化前用的默认停留时长。</li>
+      <li>恢复窗口长度 N（秒），以及撤销动作是暂停热键还是专用 undo。</li>
+      <li>拒绝提示后的确切再提示策略（提示节奏 vs 仅靠菜单入口）。</li>
+      <li>「干净样本」的精确定义（空间容差与时间窗），以及「正在打字」的定义（按键时近窗）。</li>
+      <li><i>重叠</i>窗口的聚焦语义——raise-and-focus 是默认（F2, R21）；开放的只是「目标完全被另一窗口挡住」时怎么办。</li>
+      <li>存储模型/样本的静态加密机制与备份排除方式。</li>
+      <li>录屏/共享的检测机制，以及响应是自动暂停还是常驻警告。</li>
+    </ul>
+  </section>
+
+  <hr class="sep">
+
+  <section>
+    <h2>Sources / Research · 来源与研究</h2>
+    <ul class="tight">
+      <li>Ideation：<code>2026-06-13-gaze-terminal-selector-ideation.html</code>——本 MVP 是 idea #1（「先看后按 · 粗分区切换器」），由键确认转向纯停留（键确认保留为本期范围内的退路），并把 idea #3（从手动切换自校准）吸收为核心学习信号。</li>
+      <li>现有产品：macOS 上无任何已发布的注视→窗口焦点工具；Vision Pro 看着即聚焦 + 捏合验证了范式；Tobii 的注视高亮 Alt+Tab 仅限 Windows 且需硬件。摄像头注视 ≈ 3–4° / ~50mm 误差（经校准）；专用设备 ≈ 0.5°。</li>
+      <li>macOS 可行性锚点：<code>CGWindowListCopyWindowInfo</code> 取窗口几何（无需权限）；Accessibility API（<code>AXUIElement</code>）设焦点（需权限）；<code>AutoRaise</code>（焦点跟随鼠标守护进程）是最近的架构类比。</li>
+      <li>HCI 依据：注视先于手动指点（眼睛领先手），间隔大小与情境相关；Midas 接触防御排序为「先看后按 > 语音 > 长停留 > 眨眼」，固视滤波（~150ms）区分扫视与固视。</li>
+    </ul>
+  </section>
+
+  <footer class="composition-signal">
+    由 ce-brainstorm 于 2026-06-13 编写 · 来源：ce-ideate idea #1 + 用户对话 · 经 7 视角对抗式审查加固 · Markdown 孪生版：<code>docs/brainstorms/2026-06-13-gaze-terminal-focus-requirements.md</code>
+  </footer>
+
+</div>
+</body>
+</html>
