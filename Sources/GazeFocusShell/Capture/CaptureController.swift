@@ -4,6 +4,21 @@ import CoreGraphics
 import Foundation
 import GazeFocusCore
 
+/// One processed frame: the gaze estimate (if any) plus face-framing info for the
+/// camera-alignment feedback (is a face detected, where is it in the frame, how
+/// big — a coarse distance proxy).
+public struct GazeFrame: Sendable {
+    public var t: Instant
+    public var sample: GazeSample?
+    public var faceDetected: Bool
+    public var faceCenter: Point2D   // normalized 0..1 within the camera frame
+    public var faceSize: Double      // normalized face-box height (small = far, large = close)
+    public init(t: Instant, sample: GazeSample?, faceDetected: Bool, faceCenter: Point2D, faceSize: Double) {
+        self.t = t; self.sample = sample; self.faceDetected = faceDetected
+        self.faceCenter = faceCenter; self.faceSize = faceSize
+    }
+}
+
 /// Webcam capture + Vision gaze pipeline (U7).
 ///
 /// KTD9 concurrency decision: the simplest serial-confined structure, not a
@@ -21,7 +36,7 @@ public final class CaptureController: NSObject, @unchecked Sendable {
     private let output = AVCaptureVideoDataOutput()
     private let estimator: any GazeEstimator
     private let screenSize: CGSize
-    private let onSample: @Sendable (GazeSample) -> Void
+    private let onFrame: @Sendable (GazeFrame) -> Void
 
     /// Process every Nth frame (~10Hz from a 30fps camera) to bound CPU.
     private let decimation: Int
@@ -31,11 +46,11 @@ public final class CaptureController: NSObject, @unchecked Sendable {
     public init(estimator: any GazeEstimator,
                 screenSize: CGSize,
                 decimation: Int = 3,
-                onSample: @escaping @Sendable (GazeSample) -> Void) {
+                onFrame: @escaping @Sendable (GazeFrame) -> Void) {
         self.estimator = estimator
         self.screenSize = screenSize
         self.decimation = max(1, decimation)
-        self.onSample = onSample
+        self.onFrame = onFrame
         super.init()
     }
 
@@ -81,13 +96,19 @@ extension CaptureController: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         let t = ProcessInfo.processInfo.systemUptime   // monotonic seconds
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .leftMirrored)
+        let noFace = GazeFrame(t: t, sample: nil, faceDetected: false, faceCenter: .zero, faceSize: 0)
         do {
             try handler.perform([landmarksRequest])
         } catch {
-            return
+            onFrame(noFace); return
         }
-        guard let face = (landmarksRequest.results)?.first else { return }
-        guard let (point, confidence) = estimator.estimate(face: face, screenSize: screenSize) else { return }
-        onSample(GazeSample(t: t, point: point, confidence: confidence))
+        guard let face = (landmarksRequest.results)?.first else { onFrame(noFace); return }
+
+        let bb = face.boundingBox   // normalized, Vision (bottom-left origin)
+        let center = Point2D(x: Double(bb.midX), y: Double(bb.midY))
+        let size = Double(bb.height)
+        let sample = estimator.estimate(face: face, screenSize: screenSize)
+            .map { GazeSample(t: t, point: $0.point, confidence: $0.confidence) }
+        onFrame(GazeFrame(t: t, sample: sample, faceDetected: true, faceCenter: center, faceSize: size))
     }
 }
