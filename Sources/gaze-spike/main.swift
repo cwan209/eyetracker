@@ -18,6 +18,10 @@ let paneColumns: Int = {
     guard let i = args.firstIndex(of: "--panes"), i + 1 < args.count, let n = Int(args[i + 1]) else { return 2 }
     return max(2, n)
 }()
+let dwell: Double = {
+    guard let i = args.firstIndex(of: "--dwell"), i + 1 < args.count, let d = Double(args[i + 1]) else { return 0.45 }
+    return max(0.2, d)
+}()
 let screenSize = CGDisplayBounds(CGMainDisplayID()).size
 
 let sem = DispatchSemaphore(value: 0)
@@ -44,7 +48,9 @@ typingMonitor.start()
 func selectITermPane(index: Int) {
     // iTerm2 sessions in a tab, selected by order (assumed left-to-right for a
     // horizontal split). Uses the scripting `select`, not synthetic key events.
-    let script = """
+    // In-process NSAppleScript (on the main thread, as it requires) is faster
+    // than spawning an `osascript` subprocess per switch.
+    let source = """
     tell application "iTerm2"
       tell current window
         tell current tab
@@ -54,10 +60,10 @@ func selectITermPane(index: Int) {
       end tell
     end tell
     """
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-    p.arguments = ["-e", script]
-    try? p.run()
+    DispatchQueue.main.async {
+        var err: NSDictionary?
+        NSAppleScript(source: source)?.executeAndReturnError(&err)
+    }
 }
 
 /// State runs on the capture serial queue (via `onSample`).
@@ -77,8 +83,9 @@ final class SpikeProcessor: @unchecked Sendable {
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f
     }()
 
-    init(live: Bool, paneColumns: Int, typing: KeystrokeMonitor) {
-        self.live = live; self.paneColumns = paneColumns; self.typing = typing
+    private let dwell: Instant
+    init(live: Bool, paneColumns: Int, typing: KeystrokeMonitor, dwell: Instant) {
+        self.live = live; self.paneColumns = paneColumns; self.typing = typing; self.dwell = dwell
     }
 
     /// Synthetic pane targets: the frontmost iTerm2 window split into N columns.
@@ -118,7 +125,7 @@ final class SpikeProcessor: @unchecked Sendable {
         let input = CommitPolicy.Input(
             now: sample.t, fixation: fixation, confidence: sample.confidence,
             target: target, liveTargetCount: panes.count, typingSuppressed: suppressed,
-            dwellThreshold: 0.6, requireFreshGaze: false,
+            dwellThreshold: dwell, requireFreshGaze: false,
             currentFocused: currentPane, targetStillLive: target != nil)
         let result = policy.evaluate(input)
 
@@ -138,10 +145,10 @@ final class SpikeProcessor: @unchecked Sendable {
     }
 }
 
-let processor = SpikeProcessor(live: live, paneColumns: paneColumns, typing: typingMonitor)
-let capture = CaptureController(estimator: LandmarkGazeEstimator(), screenSize: screenSize) { sample in
+let processor = SpikeProcessor(live: live, paneColumns: paneColumns, typing: typingMonitor, dwell: dwell)
+let capture = CaptureController(estimator: LandmarkGazeEstimator(), screenSize: screenSize, decimation: 2) { sample in
     processor.process(sample)
 }
 capture.start()
-print("gaze-spike running (\(live ? "LIVE — selects iTerm2 panes" : "dry-run — logging only")), \(paneColumns) panes, typing-guard \(axTrusted ? "ON" : "OFF — grant Accessibility to enable"). Ctrl-C to stop.")
+print("gaze-spike running (\(live ? "LIVE — selects iTerm2 panes" : "dry-run — logging only")), \(paneColumns) panes, dwell \(dwell)s, typing-guard \(axTrusted ? "ON" : "OFF — grant Accessibility to enable"). Ctrl-C to stop.")
 app.run()
