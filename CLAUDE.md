@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Communication
 
-Reply to the user in Chinese (中文) by default in this repository. Keep code, identifiers, commit messages, and the canonical `.md` design docs in English; only the prose you write back to the user is Chinese.
+**Always reply to the user in Chinese (中文) in this repository — this is a firm preference, not a soft default.** All prose written back to the user, including explanations, status updates, and questions, must be in Chinese. The only things that stay in English: code, identifiers, file paths, commit messages, and the canonical `.md` design docs. Technical terms with no natural Chinese equivalent may stay in English inline, but the surrounding sentence is Chinese.
 
 ## What this is
 
