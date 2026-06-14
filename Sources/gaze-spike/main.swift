@@ -28,6 +28,13 @@ guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
     exit(1)
 }
 
+// The typing-guard's global key monitor rides the Accessibility grant; prompt
+// non-fatally (if denied, the guard simply stays inert — gate 2 just won't show
+// suppression). Records timing only, never key content.
+let axTrusted = AccessibilityPermission.prompt()
+let typingMonitor = KeystrokeMonitor()
+typingMonitor.start()
+
 func selectITermPane(index: Int) {
     // iTerm2 sessions in a tab, selected by order (assumed left-to-right for a
     // horizontal split). Uses the scripting `select`, not synthetic key events.
@@ -58,8 +65,15 @@ final class SpikeProcessor: @unchecked Sendable {
     private var currentPane: WindowID?
     private var lastLog: Instant = 0
     private var dumped = false
+    private let typing: KeystrokeMonitor
+    private let typingGuard = TypingGuard()
+    private let timeFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f
+    }()
 
-    init(live: Bool, paneColumns: Int) { self.live = live; self.paneColumns = paneColumns }
+    init(live: Bool, paneColumns: Int, typing: KeystrokeMonitor) {
+        self.live = live; self.paneColumns = paneColumns; self.typing = typing
+    }
 
     /// Synthetic pane targets: the frontmost iTerm2 window split into N columns.
     private func panes() -> [WindowSnapshot] {
@@ -94,9 +108,10 @@ final class SpikeProcessor: @unchecked Sendable {
             target = id
         }
 
+        let suppressed = typingGuard.isSuppressed(lastKeystroke: typing.lastKeystroke, now: sample.t)
         let input = CommitPolicy.Input(
             now: sample.t, fixation: fixation, confidence: sample.confidence,
-            target: target, liveTargetCount: panes.count, typingSuppressed: false,
+            target: target, liveTargetCount: panes.count, typingSuppressed: suppressed,
             dwellThreshold: 0.6, requireFreshGaze: false,
             currentFocused: currentPane, targetStillLive: target != nil)
         let result = policy.evaluate(input)
@@ -104,22 +119,23 @@ final class SpikeProcessor: @unchecked Sendable {
         if sample.t - lastLog > 0.2 {
             lastLog = sample.t
             let pane = target.flatMap { $0 < labels.count ? labels[$0] : "\($0)" } ?? "—"
+            let typingFlag = suppressed ? " typing" : ""
             FileHandle.standardError.write(Data(
-                "gaze.x=\(Int(sample.point.x)) conf=\(String(format: "%.2f", sample.confidence)) panes=\(panes.count) look=\(pane)\n".utf8))
+                "\(timeFmt.string(from: Date())) gaze.x=\(Int(sample.point.x)) conf=\(String(format: "%.2f", sample.confidence)) panes=\(panes.count) look=\(pane)\(typingFlag)\n".utf8))
         }
 
         if case let .switchTo(id) = result.decision {
-            print("[\(live ? "SELECT" : "WOULD SELECT")] pane \(id < labels.count ? labels[id] : "\(id)")")
+            print("\(timeFmt.string(from: Date())) [\(live ? "SELECT" : "WOULD SELECT")] pane \(id < labels.count ? labels[id] : "\(id)")")
             if live { selectITermPane(index: id) }
             currentPane = id
         }
     }
 }
 
-let processor = SpikeProcessor(live: live, paneColumns: paneColumns)
+let processor = SpikeProcessor(live: live, paneColumns: paneColumns, typing: typingMonitor)
 let capture = CaptureController(estimator: LandmarkGazeEstimator(), screenSize: screenSize) { sample in
     processor.process(sample)
 }
 capture.start()
-print("gaze-spike running (\(live ? "LIVE — selects iTerm2 panes" : "dry-run — logging only")), \(paneColumns) panes. Ctrl-C to stop.")
+print("gaze-spike running (\(live ? "LIVE — selects iTerm2 panes" : "dry-run — logging only")), \(paneColumns) panes, typing-guard \(axTrusted ? "ON" : "OFF — grant Accessibility to enable"). Ctrl-C to stop.")
 RunLoop.main.run()
