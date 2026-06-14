@@ -32,6 +32,12 @@ guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
 // non-fatally (if denied, the guard simply stays inert — gate 2 just won't show
 // suppression). Records timing only, never key content.
 let axTrusted = AccessibilityPermission.prompt()
+
+// NSEvent global monitors only fire under a running NSApplication event loop —
+// a bare RunLoop is not enough. Accessory policy = no Dock icon, no focus theft.
+let app = NSApplication.shared
+app.setActivationPolicy(.accessory)
+
 let typingMonitor = KeystrokeMonitor()
 typingMonitor.start()
 
@@ -138,4 +144,4 @@ let capture = CaptureController(estimator: LandmarkGazeEstimator(), screenSize: 
 }
 capture.start()
 print("gaze-spike running (\(live ? "LIVE — selects iTerm2 panes" : "dry-run — logging only")), \(paneColumns) panes, typing-guard \(axTrusted ? "ON" : "OFF — grant Accessibility to enable"). Ctrl-C to stop.")
-RunLoop.main.run()
+app.run()
