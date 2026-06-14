@@ -27,6 +27,12 @@ let smoothAlpha = min(1, max(0.05, doubleArg("--smooth", 0.35)))  // EMA weight 
 let cooldown = max(0, doubleArg("--cooldown", 0.4))               // min seconds between switches
 let alignMode = args.contains("--align")                          // camera-framing setup, no switching
 let screenSize = CGDisplayBounds(CGMainDisplayID()).size
+// Refuse a headless/empty display: a zero width would make the estimator map every
+// gaze to the left edge as a *confident* point — the opposite of "uncertain ⇒ hold".
+guard screenSize.width > 0, screenSize.height > 0 else {
+    FileHandle.standardError.write(Data("No usable display (screen size is empty). Connect a display and re-run.\n".utf8))
+    exit(1)
+}
 
 let sem = DispatchSemaphore(value: 0)
 AVCaptureDevice.requestAccess(for: .video) { _ in sem.signal() }
@@ -89,28 +95,66 @@ final class SpikeProcessor: @unchecked Sendable {
     private let smoothAlpha: Double
     private let cooldown: Instant
     private let alignMode: Bool
+    private let screenW: Double
+    private var goodSince: Instant?          // align-mode: when the current OK streak began
+    private var lastFrameT: Instant?         // align-mode: previous frame time, for stream-gap detection
+    private let holdSeconds: Instant = 1.0   // sustained OK required before "LOCKED" (strict, one-time setup)
+    private let maxAlignGap: Instant = 0.3   // a longer stream pause restarts the OK streak (no credit across stalls)
     private let timeFmt: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f
     }()
 
+    // Eye-framing thresholds, all FRAME-NORMALIZED 0..1. Starting seeds — the
+    // readout prints raw eyeX / span so the user self-calibrates. x-centering is
+    // strict (0.5 is well-defined and mirror-invariant); y stays loose because a
+    // laptop webcam sits below the eye line, so the resting pupil-y is hardware-
+    // dependent (~0.55-0.62), not 0.5 — we only catch gross top/bottom misframing.
+    private let spanFar = 0.045, spanNear = 0.14      // inter-pupillary distance band
+    private let xDeadband = 0.08                      // |eyeCenter.x - 0.5| tolerance (strict)
+    private let yLo = 0.20, yHi = 0.85                // eyes-near-frame-edge gate (loose)
+    private let faceFarSize = 0.18                    // coarse "face too small" when pupils drop out
+
     init(live: Bool, paneColumns: Int, typing: KeystrokeMonitor, dwell: Instant,
-         smoothAlpha: Double, cooldown: Instant, alignMode: Bool) {
+         smoothAlpha: Double, cooldown: Instant, alignMode: Bool, screenW: Double) {
         self.live = live; self.paneColumns = paneColumns; self.typing = typing
         self.dwell = dwell; self.smoothAlpha = smoothAlpha; self.cooldown = cooldown
-        self.alignMode = alignMode
+        self.alignMode = alignMode; self.screenW = screenW
     }
 
+    private func f1(_ v: Double) -> String { String(format: "%.1f", v) }
     private func f2(_ v: Double) -> String { String(format: "%.2f", v) }
+    private func clamp01(_ v: Double) -> Double { min(1, max(0, v)) }
 
-    /// Camera-framing assessment from the face box (mirror-invariant: centered =
-    /// 0.5, size = box height as a distance proxy).
+    /// Eye-tracking + framing assessment. Tracks the **eyeballs (pupils)**, not the
+    /// face box: a face can be framed while the pupils are unresolved (blink, glare,
+    /// looking down) — `eyesDetected` is that signal, and gaze can't work without it.
+    /// Eye-first order; only the no-eyes branch falls back to face-box distance.
     private func alignment(_ frame: GazeFrame) -> (ok: Bool, hint: String) {
         if !frame.faceDetected { return (false, "no face — face the camera") }
-        if frame.faceSize < 0.22 { return (false, "too far — move closer") }
-        if frame.faceSize > 0.55 { return (false, "too close — move back") }
-        let dx = abs(frame.faceCenter.x - 0.5), dy = abs(frame.faceCenter.y - 0.5)
-        if dx > 0.18 || dy > 0.18 { return (false, "off-center — recenter (watch ctr → 0.5)") }
-        return (true, "centered")
+        if !frame.eyesDetected {
+            return frame.faceSize < faceFarSize
+                ? (false, "eyes not found — move closer")
+                : (false, "eyes not tracked — look at the camera, open eyes, cut glare")
+        }
+        if frame.eyeSpan < spanFar { return (false, "too far — move closer") }
+        if frame.eyeSpan > spanNear { return (false, "too close — move back") }
+        if abs(frame.eyeCenter.x - 0.5) > xDeadband { return (false, "off-center — recenter (watch eye.x → 0.5)") }
+        if frame.eyeCenter.y < yLo || frame.eyeCenter.y > yHi { return (false, "tilt camera — eyes near frame edge") }
+        // Lock only when the gaze pipeline actually produced an estimate — the same
+        // condition the switch path needs. Eyes can be framed (both pupils) while
+        // estimate() still returns nil (degenerate eye contour), so framing alone
+        // must not certify LOCKED, or the readout says LOCKED while look=—.
+        if frame.sample == nil { return (false, "eyes framed but no gaze — look right at the camera") }
+        return (true, "eyes locked")
+    }
+
+    /// Where the eyes are looking, as a coarse left/center/right + the gaze x as a
+    /// fraction of screen width — the "computed approximate gaze position" readout.
+    private func look(_ sample: GazeSample?) -> (label: String, fx: Double) {
+        guard let s = sample, screenW > 0 else { return ("—", .nan) }
+        let fx = s.point.x / screenW
+        let label = fx < 0.4 ? "L" : (fx > 0.6 ? "R" : "C")
+        return (label, fx)
     }
 
     /// Synthetic pane targets: the frontmost iTerm2 window split into N columns.
@@ -129,13 +173,27 @@ final class SpikeProcessor: @unchecked Sendable {
     func process(_ frame: GazeFrame) {
         let (alignOK, alignHint) = alignment(frame)
 
-        // Alignment mode: only show camera framing, never switch.
+        // Alignment mode: only show eye framing, never switch. Strict, one-time
+        // setup — require a *sustained* OK streak (holdSeconds) before declaring
+        // LOCKED, so a momentary flick through center doesn't read as aligned.
         if alignMode {
+            // A stream stall (no frames delivered) must not let `held` span the gap
+            // and lock on a single post-stall frame — restart the streak from now.
+            // Mirrors the core FixationDetector's inter-sample gap eviction.
+            let continuous = lastFrameT.map { frame.t - $0 <= maxAlignGap } ?? false
+            lastFrameT = frame.t
+            if alignOK { if goodSince == nil || !continuous { goodSince = frame.t } } else { goodSince = nil }
+            let held = goodSince.map { frame.t - $0 } ?? 0
+            let locked = held >= holdSeconds
             if frame.t - lastLog > 0.25 {
                 lastLog = frame.t
-                let status = alignOK ? "OK ✓" : "✗ \(alignHint)"
+                let status = locked ? "OK ✓ LOCKED"
+                    : alignOK ? "OK — hold \(f1(max(0, holdSeconds - held)))s"
+                    : "✗ \(alignHint)"
+                let (lk, fx) = look(frame.sample)
+                let gaze = fx.isNaN ? "look=—" : "look=\(lk) gaze.x=\(f2(fx))"
                 FileHandle.standardError.write(Data(
-                    "\(timeFmt.string(from: Date())) ALIGN \(status) · ctr=(\(f2(frame.faceCenter.x)),\(f2(frame.faceCenter.y))) size=\(Int(frame.faceSize * 100))%\n".utf8))
+                    "\(timeFmt.string(from: Date())) ALIGN \(status) · eye=(\(f2(clamp01(frame.eyeCenter.x))),\(f2(clamp01(frame.eyeCenter.y)))) span=\(f1(frame.eyeSpan * 100))% · \(gaze)\n".utf8))
             }
             return
         }
@@ -152,12 +210,12 @@ final class SpikeProcessor: @unchecked Sendable {
             FileHandle.standardError.write(Data(dump.utf8))
         }
 
-        // No usable gaze this frame (face lost / low quality) — surface framing and stop.
+        // No usable gaze this frame (eyes lost / low quality) — surface framing and stop.
         guard let sample = frame.sample else {
             if frame.t - lastLog > 0.3 {
                 lastLog = frame.t
                 FileHandle.standardError.write(Data(
-                    "\(timeFmt.string(from: Date())) face✗ \(alignHint) look=—\n".utf8))
+                    "\(timeFmt.string(from: Date())) eye✗ \(alignHint) look=—\n".utf8))
             }
             return
         }
@@ -193,9 +251,10 @@ final class SpikeProcessor: @unchecked Sendable {
             lastLog = sample.t
             let pane = target.flatMap { $0 < labels.count ? labels[$0] : "\($0)" } ?? "—"
             let typingFlag = suppressed ? " typing" : ""
-            let face = alignOK ? "face✓" : "face⚠︎(\(alignHint))"
+            let eye = alignOK ? "eye✓" : "eye⚠︎(\(alignHint))"
+            let gx = screenW > 0 ? f2(sm.x / screenW) : "?"   // 0..1 fraction, same unit as align mode
             FileHandle.standardError.write(Data(
-                "\(timeFmt.string(from: Date())) \(face) gaze.x=\(Int(sm.x)) conf=\(String(format: "%.2f", sample.confidence)) look=\(pane)\(typingFlag)\n".utf8))
+                "\(timeFmt.string(from: Date())) \(eye) gaze.x=\(gx) conf=\(String(format: "%.2f", sample.confidence)) look=\(pane)\(typingFlag)\n".utf8))
         }
 
         // Commit, rate-limited by the cooldown to stop rapid flicker.
@@ -209,13 +268,14 @@ final class SpikeProcessor: @unchecked Sendable {
 }
 
 let processor = SpikeProcessor(live: live, paneColumns: paneColumns, typing: typingMonitor,
-                               dwell: dwell, smoothAlpha: smoothAlpha, cooldown: cooldown, alignMode: alignMode)
+                               dwell: dwell, smoothAlpha: smoothAlpha, cooldown: cooldown,
+                               alignMode: alignMode, screenW: Double(screenSize.width))
 let capture = CaptureController(estimator: LandmarkGazeEstimator(), screenSize: screenSize, decimation: 2) { frame in
     processor.process(frame)
 }
 capture.start()
 if alignMode {
-    print("gaze-spike ALIGN mode — adjust your camera/seat until it reads \"OK ✓\", then re-run without --align. Ctrl-C to stop.")
+    print("gaze-spike ALIGN mode — tracks your eyes (pupils). Adjust camera/seat until it holds \"OK ✓ LOCKED\" (~1s steady), then re-run without --align. Ctrl-C to stop.")
 } else {
     print("gaze-spike running (\(live ? "LIVE — selects iTerm2 panes" : "dry-run — logging only")), \(paneColumns) panes, dwell \(dwell)s, smooth \(smoothAlpha), cooldown \(cooldown)s, typing-guard \(axTrusted ? "ON" : "OFF"). Ctrl-C to stop.")
 }
