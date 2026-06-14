@@ -18,10 +18,13 @@ let paneColumns: Int = {
     guard let i = args.firstIndex(of: "--panes"), i + 1 < args.count, let n = Int(args[i + 1]) else { return 2 }
     return max(2, n)
 }()
-let dwell: Double = {
-    guard let i = args.firstIndex(of: "--dwell"), i + 1 < args.count, let d = Double(args[i + 1]) else { return 0.45 }
-    return max(0.2, d)
-}()
+func doubleArg(_ name: String, _ fallback: Double) -> Double {
+    guard let i = args.firstIndex(of: name), i + 1 < args.count, let d = Double(args[i + 1]) else { return fallback }
+    return d
+}
+let dwell = max(0.1, doubleArg("--dwell", 0.45))
+let smoothAlpha = min(1, max(0.05, doubleArg("--smooth", 0.35)))  // EMA weight on the newest sample
+let cooldown = max(0, doubleArg("--cooldown", 0.4))               // min seconds between switches
 let screenSize = CGDisplayBounds(CGMainDisplayID()).size
 
 let sem = DispatchSemaphore(value: 0)
@@ -77,15 +80,20 @@ final class SpikeProcessor: @unchecked Sendable {
     private var currentPane: WindowID?
     private var lastLog: Instant = 0
     private var dumped = false
+    private var smoothed: Point2D?
+    private var lastSwitch: Instant = -100
     private let typing: KeystrokeMonitor
     private let typingGuard = TypingGuard()
+    private let dwell: Instant
+    private let smoothAlpha: Double
+    private let cooldown: Instant
     private let timeFmt: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f
     }()
 
-    private let dwell: Instant
-    init(live: Bool, paneColumns: Int, typing: KeystrokeMonitor, dwell: Instant) {
-        self.live = live; self.paneColumns = paneColumns; self.typing = typing; self.dwell = dwell
+    init(live: Bool, paneColumns: Int, typing: KeystrokeMonitor, dwell: Instant, smoothAlpha: Double, cooldown: Instant) {
+        self.live = live; self.paneColumns = paneColumns; self.typing = typing
+        self.dwell = dwell; self.smoothAlpha = smoothAlpha; self.cooldown = cooldown
     }
 
     /// Synthetic pane targets: the frontmost iTerm2 window split into N columns.
@@ -114,7 +122,19 @@ final class SpikeProcessor: @unchecked Sendable {
             FileHandle.standardError.write(Data(dump.utf8))
         }
 
-        let fixation = detector.add(sample)
+        // EMA-smooth the noisy proxy gaze before fixation detection.
+        let raw = sample.point
+        let sm: Point2D
+        if let prev = smoothed {
+            sm = Point2D(x: smoothAlpha * raw.x + (1 - smoothAlpha) * prev.x,
+                         y: smoothAlpha * raw.y + (1 - smoothAlpha) * prev.y)
+        } else {
+            sm = raw
+        }
+        smoothed = sm
+        let smSample = GazeSample(t: sample.t, point: sm, confidence: sample.confidence)
+
+        let fixation = detector.add(smSample)
         var target: WindowID? = nil
         if case let .fixation(point, _) = fixation,
            case let .window(id) = mapper.resolve(point: point, windows: panes) {
@@ -134,10 +154,12 @@ final class SpikeProcessor: @unchecked Sendable {
             let pane = target.flatMap { $0 < labels.count ? labels[$0] : "\($0)" } ?? "—"
             let typingFlag = suppressed ? " typing" : ""
             FileHandle.standardError.write(Data(
-                "\(timeFmt.string(from: Date())) gaze.x=\(Int(sample.point.x)) conf=\(String(format: "%.2f", sample.confidence)) panes=\(panes.count) look=\(pane)\(typingFlag)\n".utf8))
+                "\(timeFmt.string(from: Date())) gaze.x=\(Int(sm.x)) conf=\(String(format: "%.2f", sample.confidence)) panes=\(panes.count) look=\(pane)\(typingFlag)\n".utf8))
         }
 
-        if case let .switchTo(id) = result.decision {
+        // Commit, rate-limited by the cooldown to stop rapid flicker.
+        if case let .switchTo(id) = result.decision, sample.t - lastSwitch >= cooldown {
+            lastSwitch = sample.t
             print("\(timeFmt.string(from: Date())) [\(live ? "SELECT" : "WOULD SELECT")] pane \(id < labels.count ? labels[id] : "\(id)")")
             if live { selectITermPane(index: id) }
             currentPane = id
@@ -145,10 +167,11 @@ final class SpikeProcessor: @unchecked Sendable {
     }
 }
 
-let processor = SpikeProcessor(live: live, paneColumns: paneColumns, typing: typingMonitor, dwell: dwell)
+let processor = SpikeProcessor(live: live, paneColumns: paneColumns, typing: typingMonitor,
+                               dwell: dwell, smoothAlpha: smoothAlpha, cooldown: cooldown)
 let capture = CaptureController(estimator: LandmarkGazeEstimator(), screenSize: screenSize, decimation: 2) { sample in
     processor.process(sample)
 }
 capture.start()
-print("gaze-spike running (\(live ? "LIVE — selects iTerm2 panes" : "dry-run — logging only")), \(paneColumns) panes, dwell \(dwell)s, typing-guard \(axTrusted ? "ON" : "OFF — grant Accessibility to enable"). Ctrl-C to stop.")
+print("gaze-spike running (\(live ? "LIVE — selects iTerm2 panes" : "dry-run — logging only")), \(paneColumns) panes, dwell \(dwell)s, smooth \(smoothAlpha), cooldown \(cooldown)s, typing-guard \(axTrusted ? "ON" : "OFF"). Ctrl-C to stop.")
 app.run()
